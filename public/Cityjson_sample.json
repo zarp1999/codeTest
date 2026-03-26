@@ -1,0 +1,452 @@
+{
+  "CityObjects": {
+    "pipe_13559": {
+      "attributes": {
+        "accuracy": null,
+        "diameter": 250,
+        "end_point_depth": 0,
+        "layer": "42_下水道_現況",
+        "material": "",
+        "pipe_kind": "42_下水道_現況",
+        "radius": 12,
+        "start_point_depth": 0
+      },
+      "created_at": "2025-10-01T11:32:42.677091",
+      "created_user": 1,
+      "feature_id": 27192,
+      "geometry": [
+        {
+          "boundaries": [[0, 1]],
+          "lod": 1,
+          "type": "LineString",
+          "vertices": [
+            [135.534723611934, 104.181721819453, 90],
+            [136.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "snapshot_id": 2,
+      "source_id": 1,
+      "source_type_id": 2,
+      "type": "GenericCityObject",
+      "updated_at": "2025-10-01T11:32:42.677091",
+      "updated_user": 1
+    },
+    "pipe_1": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "FCDU",
+        "material": "FCDU",
+        "diameter": 200,
+        "radius": 12,
+        "start_point_depth": -1.2,
+        "end_point_depth": -1.2
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [136.500744561953, 108.026596399119, 90],
+            [137.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 1,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+
+    "pipe_2": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "水道",
+        "material": "水道管",
+        "diameter": 250,
+        "radius": 125,
+        "start_point_depth": -1.4,
+        "end_point_depth": -1.4
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [137.500744561953, 108.026596399119, 90],
+            [138.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 2,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+
+    "pipe_3": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "ガス",
+        "material": "ガス管",
+        "diameter": 300,
+        "radius": 150,
+        "start_point_depth": -1.8,
+        "end_point_depth": -1.8
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [138.500744561953, 108.026596399119, 90],
+            [139.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 3,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+
+    "pipe_4": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "下水道",
+        "material": "下水道管",
+        "diameter": 400,
+        "radius": 200,
+        "start_point_depth": -2.0,
+        "end_point_depth": -2.0
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [139.500744561953, 108.026596399119, 90],
+            [140.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 4,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+
+    "pipe_5": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "ジェイコム",
+        "material": "通信ケーブル",
+        "diameter": 150,
+        "radius": 75,
+        "start_point_depth": -1.0,
+        "end_point_depth": -1.0
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [140.500744561953, 108.026596399119, 90],
+            [141.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 5,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+
+    "pipe_6": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "東電",
+        "material": "電力ケーブル",
+        "diameter": 180,
+        "radius": 90,
+        "start_point_depth": -1.3,
+        "end_point_depth": -1.3
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [141.500744561953, 108.026596399119, 90],
+            [142.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 6,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_11": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "東電",
+        "material": "電力ケーブル",
+        "diameter": 180,
+        "radius": 90,
+        "start_point_depth": 0,
+        "end_point_depth": 0
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [142.500744561953, 108.026596399119, 90],
+            [143.500744561953, 108.026596399119, 90]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 11,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_7": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "警察",
+        "material": "警察回線",
+        "diameter": 500,
+        "radius": 250,
+        "start_point_depth": 450,
+        "end_point_depth": 450
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [152.500744561953, 108.026596399119, 450],
+            [173.500744561953, 108.026596399119, 450]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 7,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_8": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "警察",
+        "material": "警察回線",
+        "diameter": 120,
+        "radius": 60,
+        "start_point_depth": 650,
+        "end_point_depth": 650
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [142.500744561953, 118.026596399119, 650],
+            [143.500744561953, 118.026596399119, 650]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 8,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_9": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "警察",
+        "material": "警察回線",
+        "diameter": 120,
+        "radius": 60,
+        "start_point_depth": 850,
+        "end_point_depth": 850
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [152.500744561953, 108.026596399119, 850],
+            [153.500744561953, 108.026596399119, 850]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 9,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_10": {
+      "type": "GenericCityObject",
+      "attributes": {
+        "pipe_kind": "警察",
+        "material": "警察回線",
+        "diameter": 120,
+        "radius": 60,
+        "start_point_depth": 1050,
+        "end_point_depth": 1050
+      },
+      "geometry": [
+        {
+          "type": "LineString",
+          "lod": 1,
+          "boundaries": [[0, 1]],
+          "vertices": [
+            [142.500744561953, 128.026596399119, 1050],
+            [143.500744561953, 128.026596399119, 1050]
+          ]
+        }
+      ],
+      "shape_type": 16,
+      "feature_id": 10,
+      "source_id": 1,
+      "source_type_id": 1,
+      "snapshot_id": 1,
+      "created_at": "2025-10-13T17:00:00",
+      "updated_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "updated_user": 1
+    },
+    "pipe_12": {
+      "attributes": {
+        "end_point_depth": 100,
+        "height": 2,
+        "pipe_kind": "東電",
+        "start_point_depth": 100,
+        "width": 3.1483
+      },
+      "created_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "feature_id": 12,
+      "geometry": [
+        {
+          "boundaries": [[0, 1]],
+          "lod": 1,
+          "type": "LineString",
+          "vertices": [
+            [127.500744561953, 108.026596399119, 100],
+            [128.500744561953, 108.026596399119, 100]
+          ]
+        }
+      ],
+      "shape_type": 14,
+      "source_id": 1,
+      "source_type_id": 2,
+      "snapshot_id": 2,
+      "type": "GenericCityObject",
+      "updated_at": "2025-10-13T17:00:00",
+      "updated_user": 1
+    },
+    "pipe_14004": {
+      "attributes": {
+        "accuracy": "B",
+        "depth_1": -0.26551,
+        "depth_2": -0.21237,
+        "depth_3": -0.54794,
+        "depth_4": -0.54126,
+        "material": "",
+        "pipe_kind": "不明"
+      },
+      "created_at": "2025-10-13T17:00:00",
+      "created_user": 1,
+      "feature_id": 14004,
+      "geometry": [
+        {
+          "boundaries": [
+            [0, 1, 2],
+            [0, 1, 3],
+            [0, 2, 3],
+            [1, 2, 3]
+          ],
+          "lod": 1,
+          "type": "Polyhedron",
+          "vertices": [
+            [-1.652610, -7.563480, -0.26551],
+            [-0.894809, -6.062542, -0.21237],
+            [-0.321206, -7.962409, -0.54794],
+            [1.8589181, -7.863480, -0.54126]
+          ]
+        }
+      ],
+      "shape_type": 25,
+      "source_id": 1,
+      "source_type_id": 9,
+      "snapshot_id": 2,
+      "type": "GenericCityObject",
+      "updated_at": "2025-10-13T17:00:00",
+      "updated_user": 1
+    }
+  }
+}

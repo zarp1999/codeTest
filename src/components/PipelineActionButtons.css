@@ -1,0 +1,97 @@
+/* 管路アクションボタンのスタイル */
+.pipeline-action-buttons {
+  margin-top: 10px;
+  padding: 10px 15px;
+  /* background: rgba(0, 0, 0, 0.3); */
+  /* border-top: 1px solid rgba(255, 255, 255, 0.2); */
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.button-row:last-child {
+  margin-bottom: 0;
+}
+
+.action-btn {
+  flex: 1;
+  /* padding: 8px 12px; */
+  font-size: 13px;
+  font-weight: 600;
+  background: white;
+  color: #ec3838;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  /* box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); */
+  white-space: nowrap;
+  position: relative;
+  z-index: 11;
+  pointer-events: auto;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.action-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn:disabled {
+  background: #e0e0e0;
+  color: #999;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ボタン別のアクセントカラー（ホバー時） */
+.btn-register:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.btn-duplicate:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.btn-restore:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.btn-restore-all:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+/* レスポンシブ対応 */
+/* @media (max-width: 768px) {
+  .action-btn {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .button-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .action-btn {
+    width: 100%;
+  }
+}
+ */

@@ -1,0 +1,102 @@
+[
+  {
+    "id": "1",
+    "shape_type": "Point"
+  },
+  {
+    "id": "2",
+    "shape_type": "MultiPoint"
+  },
+  {
+    "id": "3",
+    "shape_type": "LineString"
+  },
+  {
+    "id": "4",
+    "shape_type": "MultiLineString"
+  },
+  {
+    "id": "5",
+    "shape_type": "Arc"
+  },
+  {
+    "id": "6",
+    "shape_type": "Ellipse"
+  },
+  {
+    "id": "7",
+    "shape_type": "EllipticalArc"
+  },
+  {
+    "id": "8",
+    "shape_type": "Spline"
+  },
+  {
+    "id": "9",
+    "shape_type": "Polygon"
+  },
+  {
+    "id": "10",
+    "shape_type": "MultiPolygon"
+  },
+  {
+    "id": "11",
+    "shape_type": "Circle"
+  },
+  {
+    "id": "12",
+    "shape_type": "Rectangle"
+  },
+  {
+    "id": "13",
+    "shape_type": "Cube"
+  },
+  {
+    "id": "14",
+    "shape_type": "Box"
+  },
+  {
+    "id": "15",
+    "shape_type": "Sphere"
+  },
+  {
+    "id": "16",
+    "shape_type": "Cylinder"
+  },
+  {
+    "id": "17",
+    "shape_type": "Cone"
+  },
+  {
+    "id": "18",
+    "shape_type": "Torus"
+  },
+  {
+    "id": "19",
+    "shape_type": "Tetrahedron"
+  },
+  {
+    "id": "20",
+    "shape_type": "Octahedron"
+  },
+  {
+    "id": "21",
+    "shape_type": "Extrusion"
+  },
+  {
+    "id": "22",
+    "shape_type": "Revolution"
+  },
+  {
+    "id": "23",
+    "shape_type": "GeometryCollection"
+  },
+  {
+    "id": "24",
+    "shape_type": "MultiCylinder"
+  },
+  {
+    "id": "25",
+    "shape_type": "Polyhedron"
+  }
+]

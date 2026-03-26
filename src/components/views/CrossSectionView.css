@@ -1,0 +1,519 @@
+.cross-section-view {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.cross-section-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  /* 断面図生成画面は背景が明るいため、文字は黒系にする */
+  color: #111;
+  border-radius: 5px;
+  font-size: 10px;
+  pointer-events: auto;
+  line-height: 1.5;
+  max-width: 800px;
+  z-index: 100;
+  padding: 0;
+}
+
+.cross-section-panel .panel-header {
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.cross-section-panel h3 {
+  margin: 0;
+  font-size: 10px;
+  color: inherit;
+  font-weight: normal;
+}
+
+.cross-section-panel h4 {
+  margin: 8px 0 5px 0;
+  font-size: 10px;
+  color: inherit;
+  font-weight: normal;
+}
+
+.panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-section {
+  padding: 0;
+  margin: 5px 0;
+}
+
+.instruction {
+  margin: 0 0 5px 0;
+  color: inherit;
+  font-size: 10px;
+}
+
+.selected-count {
+  margin: 0;
+  font-size: 10px;
+  font-weight: normal;
+  color: inherit;
+}
+
+.selected-pipelines {
+  padding: 0;
+  margin: 8px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.selected-pipelines ul {
+  margin: 5px 0 0 0;
+  padding-left: 15px;
+  list-style-type: disc;
+}
+
+.selected-pipelines li {
+  margin: 3px 0;
+  font-size: 10px;
+  color: inherit;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 5px;
+  flex-direction: column;
+  margin: 8px 0;
+}
+
+.generate-button,
+.clear-button {
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: normal;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(0, 0, 0, 0.04);
+  color: #111;
+}
+
+.generate-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.35);
+}
+
+.generate-button:disabled {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.3);
+  cursor: not-allowed;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.clear-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: rgba(0, 0, 0, 0.35);
+}
+
+.clear-button:disabled {
+  background: rgba(0, 0, 0, 0.03);
+  color: rgba(0, 0, 0, 0.3);
+  cursor: not-allowed;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.cross-section-result {
+  padding: 0;
+  margin: 8px 0;
+}
+
+.cross-section-result p {
+  margin: 3px 0;
+  font-size: 10px;
+  color: inherit;
+}
+
+.cross-section-result .note {
+  color: inherit;
+  font-style: italic;
+  margin-top: 5px;
+}
+
+/* スクロールバーのスタイル */
+.selected-pipelines::-webkit-scrollbar {
+  width: 6px;
+}
+
+.selected-pipelines::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+}
+
+.selected-pipelines::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+
+.selected-pipelines::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* 断面自動作成モードのトグルスイッチ（右上） */
+.auto-mode-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 10px 15px;
+  border-radius: 5px;
+  color: white;
+  max-width: calc(100vw - 20px);
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+/* 地形表示・opacity（右上：断面自動作成モードとは別） */
+.terrain-controls {
+  position: absolute;
+  top: 70px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.7);
+  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 15px);
+  border-radius: 5px;
+  color: white;
+  width: min(220px, calc(100vw - 20px));
+  max-width: calc(100vw - 320px); /* レイヤーパネルの幅（約300px）を考慮 */
+  box-sizing: border-box;
+  font-size: clamp(8px, 1vw, 12px);
+}
+
+/* レイヤーパネルとの重複を防ぐため、画面幅が小さい場合は位置を調整 */
+@media (max-width: 1400px) {
+  .terrain-controls {
+    /* レイヤーパネルの幅（約300px）を考慮して右側のマージンを増やす */
+    right: max(10px, calc(100vw - 320px));
+    max-width: calc(100vw - 320px);
+  }
+}
+
+@media (max-width: 520px) {
+  .auto-mode-toggle,
+  .terrain-controls {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.terrain-controls .terrain-toggle-button {
+  width: 100%;
+  padding: clamp(4px, 0.8vw, 6px) clamp(6px, 1.2vw, 10px);
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: clamp(8px, 1vw, 12px);
+  transition: background-color 0.2s;
+}
+
+.terrain-controls .terrain-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.terrain-controls .terrain-opacity-controls {
+  margin-top: 10px;
+}
+
+.terrain-controls .terrain-opacity-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: clamp(8px, 1vw, 12px);
+  margin-bottom: 6px;
+}
+
+.terrain-controls .terrain-opacity-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: clamp(8px, 1vw, 12px);
+}
+
+.terrain-controls .terrain-opacity-value {
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(8px, 1vw, 12px);
+}
+
+.terrain-controls .terrain-opacity-range {
+  width: 100%;
+}
+
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toggle-switch input[type="checkbox"] {
+  width: 40px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  user-select: none;
+}
+
+/* 断面自動作成モードの設定テーブル */
+.auto-mode-settings {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.auto-mode-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  color: inherit;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.auto-mode-table th,
+.auto-mode-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.auto-mode-table th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: normal;
+}
+
+.auto-mode-table td input[type="number"] {
+  width: 80px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  color: #111;
+  font-size: 10px;
+  pointer-events: auto;
+  cursor: text;
+  z-index: 1;
+  position: relative;
+}
+
+.auto-mode-table td input[type="number"]:focus {
+  outline: none;
+  border-color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.unit {
+  margin-left: 5px;
+  color: rgba(0, 0, 0, 0.7);
+  font-size: 9px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkbox-label span {
+  user-select: none;
+}
+
+/* 断面リストのスタイル */
+.section-list {
+  position: absolute;
+  bottom: 60px;
+  left: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 15px;
+  border-radius: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.section-list-title {
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.section-list-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section-list-item {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 断面ナビゲーションのスタイル */
+.section-navigation {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  padding: 15px 30px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 100;
+}
+
+.nav-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  color: white;
+  font-size: 18px;
+  padding: 8px 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 40px;
+}
+
+.nav-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-button:active {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.nav-button:disabled {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.close-button {
+  margin-left: 20px;
+  font-size: 12px;
+  padding: 6px 12px;
+  min-width: auto;
+}
+
+.section-name {
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+  min-width: 100px;
+  text-align: center;
+}
+
+/* ラジオボタングループ */
+.radio-group {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.radio-label input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.radio-label span {
+  user-select: none;
+}
+
+/* 実行ボタンと断面表示に遷移ボタン */
+.auto-mode-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.execute-button,
+.transition-button {
+  flex: 1;
+  padding: 8px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: normal;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.execute-button:hover,
+.transition-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.execute-button:active,
+.transition-button:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.execute-button:disabled,
+.transition-button:disabled {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+

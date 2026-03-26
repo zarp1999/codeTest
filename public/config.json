@@ -1,0 +1,10 @@
+{
+  "mode": "normal",
+  "geoTiffUrl": "/05le904.tif",
+  "potreeMetadataUrl": "/potree/metadata.json",
+  "verticalLineBaseY": {
+    "normal": 0,
+    "elevationNoTerrain": 0
+  }
+}
+

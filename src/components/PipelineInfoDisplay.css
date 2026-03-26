@@ -1,0 +1,212 @@
+.pipeline-info-display {
+  color: white;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 70px;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.pipeline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pipeline-table th {
+  text-align: center;
+  font-weight: bold;
+  font-size: 13px;
+  word-wrap: break-word;
+}
+
+.pipeline-table td {
+  padding: 2px;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow: hidden;
+}
+
+.item-label {
+  font-weight: bold;
+  text-align: left;
+  padding-right: 4px;
+  width: 30%;
+  font-size: 13px;
+}
+
+.set-value {
+  text-align: left;
+  width: 25%;
+  font-size: 13px;
+}
+
+.input-field {
+  width: 45%;
+  padding: 1px;
+}
+
+.pipeline-input {
+  color: white;
+  width: 100%;
+  border: none;
+  padding: 2px;
+  font-size: 13px;
+  border-radius: 5px;
+  pointer-events: auto;
+  cursor: text;
+  background-color: transparent;
+  transition: border 0.2s ease;
+  box-sizing: border-box;
+}
+
+.pipeline-input:focus {
+  outline: none;
+  background-color: rgba(255, 255, 255, 0.2);
+  pointer-events: auto;
+}
+
+.pipeline-input::placeholder {
+  color: #5a5959;
+  font-size: 13px;
+}
+
+/* レスポンシブデザイン */
+/* @media (max-width: 1200px) {
+  .pipeline-info-display {
+    font-size: 9px;
+    max-height: 350px;
+  }
+  
+  .pipeline-table {
+    font-size: 8px;
+  }
+  
+  .pipeline-table th {
+    font-size: 7px;
+  }
+  
+  .item-label,
+  .set-value {
+    font-size: 7px;
+  }
+  
+  .pipeline-input {
+    font-size: 7px;
+  }
+  
+  .pipeline-input::placeholder {
+    font-size: 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  .pipeline-info-display {
+    font-size: 8px;
+    max-height: 300px;
+    margin-top: 3px;
+  }
+  
+  .pipeline-table {
+    font-size: 7px;
+  }
+  
+  .pipeline-table th {
+    font-size: 6px;
+    padding: 2px 1px;
+  }
+  
+  .pipeline-table td {
+    padding: 1px;
+  }
+  
+  .item-label {
+    width: 35%;
+    font-size: 6px;
+    padding-right: 2px;
+  }
+  
+  .set-value {
+    width: 20%;
+    font-size: 6px;
+  }
+  
+  .input-field {
+    width: 45%;
+    padding: 0.5px;
+  }
+  
+  .pipeline-input {
+    font-size: 6px;
+    padding: 1px;
+  }
+  
+  .pipeline-input::placeholder {
+    font-size: 5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pipeline-info-display {
+    font-size: 7px;
+    max-height: 250px;
+    margin-top: 2px;
+  }
+  
+  .pipeline-table {
+    font-size: 6px;
+  }
+  
+  .pipeline-table th {
+    font-size: 5px;
+    padding: 1px;
+  }
+  
+  .pipeline-table td {
+    padding: 0.5px;
+  }
+  
+  .item-label {
+    width: 40%;
+    font-size: 5px;
+    padding-right: 1px;
+  }
+  
+  .set-value {
+    width: 15%;
+    font-size: 5px;
+  }
+  
+  .input-field {
+    width: 45%;
+    padding: 0;
+  }
+  
+  .pipeline-input {
+    font-size: 5px;
+    padding: 0.5px;
+  }
+  
+  .pipeline-input::placeholder {
+    font-size: 4px;
+  }
+} */
+
+/* スクロールバーのスタイル */
+.pipeline-info-display::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pipeline-info-display::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.pipeline-info-display::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.pipeline-info-display::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+

@@ -1,0 +1,42 @@
+{
+  "name": "cityjson-3d-viewer",
+  "version": "1.0.0",
+  "description": "CityJSON 3D Viewer with React and Three.js",
+  "private": true,
+  "dependencies": {
+    "geotiff": "^2.1.4-beta.1",
+    "lil-gui": "^0.20.0",
+    "potree-core": "^2.0.12",
+    "antd": "^5.24.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.9.4",
+    "react-scripts": "5.0.1",
+    "three": "^0.157.0",
+    "three-csg-ts": "^3.2.0",
+    "web-ifc-three": "^0.0.126"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

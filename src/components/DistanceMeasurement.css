@@ -1,0 +1,62 @@
+.distance-measurement-display {
+  font-size: 13px;
+}
+
+.measurement-title {
+  font-size: 13px;
+  /* margin-bottom: 8px; */
+  /* padding-bottom: 4px; */
+}
+
+.measurement-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.measurement-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.measurement-row .value {
+  color: #ffffff;
+}
+
+.measurement-row .point {
+  font-size: 13px;
+  gap: 10px;
+}
+
+.measurement-row .distance {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+/* ホバー効果 */
+/* .distance-measurement-display:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+} */
+
+/* レスポンシブ対応 */
+/* @media (max-width: 768px) {
+  .distance-measurement-display {
+    font-size: 10px;
+  }
+
+  .measurement-title {
+    font-size: 12px;
+  }
+
+  .measurement-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .measurement-row .distance {
+    margin-left: 0;
+  } */
+/* } */
+
