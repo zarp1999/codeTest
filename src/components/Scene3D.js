@@ -959,16 +959,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
       const outline = new THREE.LineSegments(edges, outlineMaterial);
 
-      // 元のメッシュと同じ位置・回転・スケールを適用
-      outline.position.copy(mesh.position);
-      outline.rotation.copy(mesh.rotation);
-      outline.scale.copy(mesh.scale);
-
-      // メッシュの親オブジェクトがある場合、その変換も考慮
-      if (mesh.parent && mesh.parent !== sceneRef.current) {
-        mesh.parent.updateMatrixWorld();
-        outline.applyMatrix4(mesh.parent.matrixWorld);
-      }
+      // 元メッシュのワールド変換をそのまま反映（親階層の有無に依存しない）
+      mesh.updateMatrixWorld(true);
+      const worldPosition = new THREE.Vector3();
+      const worldQuaternion = new THREE.Quaternion();
+      const worldScale = new THREE.Vector3();
+      mesh.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale);
+      outline.position.copy(worldPosition);
+      outline.quaternion.copy(worldQuaternion);
+      outline.scale.copy(worldScale);
 
       sceneRef.current.add(outline);
       outlineHelperRef.current = outline;
@@ -2493,12 +2492,16 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       // アウトラインの位置を更新（選択されたメッシュが移動した場合）
       if (outlineHelperRef.current && selectedMeshRef.current) {
         const mesh = selectedMeshRef.current;
-        mesh.updateMatrixWorld();
+        mesh.updateMatrixWorld(true);
 
-        // アウトラインの位置・回転・スケールを更新
-        outlineHelperRef.current.position.copy(mesh.position);
-        outlineHelperRef.current.rotation.copy(mesh.rotation);
-        outlineHelperRef.current.scale.copy(mesh.scale);
+        // ワールド座標系で同期（親子関係があってもズレない）
+        const worldPosition = new THREE.Vector3();
+        const worldQuaternion = new THREE.Quaternion();
+        const worldScale = new THREE.Vector3();
+        mesh.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale);
+        outlineHelperRef.current.position.copy(worldPosition);
+        outlineHelperRef.current.quaternion.copy(worldQuaternion);
+        outlineHelperRef.current.scale.copy(worldScale);
         outlineHelperRef.current.updateMatrixWorld();
       }
 
