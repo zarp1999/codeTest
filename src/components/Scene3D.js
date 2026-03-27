@@ -2134,6 +2134,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           // 管路と切り口の表示を逆にする
           if (enableCrossSectionMode && crossSectionRef.current) {
             crossSectionRef.current.toggleCrossSections(!newShowPipes);
+            // 属性ラベルは「管路非表示時のみ」表示
+            if (typeof crossSectionRef.current.toggleAttributeLabels === 'function') {
+              crossSectionRef.current.toggleAttributeLabels(!newShowPipes);
+            }
           }
           return newShowPipes;
         });

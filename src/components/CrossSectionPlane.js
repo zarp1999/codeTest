@@ -110,11 +110,14 @@ class CrossSectionPlane {
     this.showGridLines = true;
     // 深さガイド（グリッド線・ラベル・縦線）の表示状態
     this.showDepthGuides = true;
+    // 属性ラベル（pipe_kind/material/diameter）の表示状態
+    this.showAttributeLabels = false;
 
     // 断面描画情報を一時的に保存する配列
     this.pendingCrossSections = []; // {center, radius, axisDirection, color, pipeObject, crossSectionZ}
     this.pendingVerticalLines = []; // {key, pipePosition, basePoint, color, fallbackTopY, attributeLabelText}
     this.attributeLabelEntries = []; // {sprite, anchorPosition}
+    this.attributeLabelConnectors = []; // 属性ラベルと断面位置を結ぶ線
 
     // 最後に生成した断面の「中心点」（4キー等で参照する用途）
     this.currentPlaneCenter = null;
@@ -1541,14 +1544,41 @@ class CrossSectionPlane {
         CROSS_SECTION_CONFIG.label.renderOrder
       );
       attributeSprite.position.copy(attributeAnchor);
-      attributeSprite.visible = this.showDepthGuides;
+      attributeSprite.visible = this.showAttributeLabels;
+      attributeSprite.userData = {
+        ...(attributeSprite.userData || {}),
+        isAttributeLabel: true
+      };
       this.scene.add(attributeSprite);
 
       this.depthLabels.push(attributeSprite);
       this.depthLabelPositions.push(attributeAnchor.clone());
+
+      const connectorGeometry = new LineGeometry();
+      connectorGeometry.setPositions([
+        attributeAnchor.x, attributeAnchor.y, attributeAnchor.z,
+        attributeAnchor.x, attributeAnchor.y, attributeAnchor.z
+      ]);
+      const connectorMaterial = new LineMaterial({
+        color: color,
+        linewidth: CROSS_SECTION_CONFIG.verticalLine.lineWidth,
+        transparent: true,
+        opacity: CROSS_SECTION_CONFIG.verticalLine.opacity,
+        resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+        worldUnits: false,
+        vertexColors: false,
+        dashed: false
+      });
+      const connectorLine = new Line2(connectorGeometry, connectorMaterial);
+      connectorLine.computeLineDistances();
+      connectorLine.visible = this.showAttributeLabels;
+      this.scene.add(connectorLine);
+      this.attributeLabelConnectors.push(connectorLine);
+
       this.attributeLabelEntries.push({
         sprite: attributeSprite,
-        anchorPosition: attributeAnchor.clone()
+        anchorPosition: attributeAnchor.clone(),
+        connector: connectorLine
       });
     }
 
@@ -1740,6 +1770,7 @@ class CrossSectionPlane {
       entries: this.attributeLabelEntries,
       config: CROSS_SECTION_CONFIG.attributeLabel
     });
+    this.updateAttributeLabelConnectors();
 
     const endDbgTime = performance.now();
     console.log('Draw Time: ', endDbgTime - startDbgTime, ', Size: ', uniqueSections.size, ', Ratio: ', (endDbgTime - startDbgTime) / uniqueSections.size);
@@ -1981,6 +2012,12 @@ class CrossSectionPlane {
     this.gridDepthLabels = [];
     this.depthLabelPositions = [];
     this.attributeLabelEntries = [];
+    this.attributeLabelConnectors.forEach((line) => {
+      this.scene.remove(line);
+      if (line.geometry) line.geometry.dispose();
+      if (line.material) line.material.dispose();
+    });
+    this.attributeLabelConnectors = [];
 
     this.crossSections.forEach(mesh => {
       this.scene.remove(mesh);
@@ -2034,7 +2071,29 @@ class CrossSectionPlane {
       line.visible = show;
     });
     this.depthLabels.forEach((label) => {
+      // 属性ラベルは7キー連動専用なので、ここでは切り替えない
+      if (label?.userData?.isAttributeLabel) {
+        return;
+      }
       label.visible = show;
+    });
+  }
+
+  /**
+   * 属性ラベル（pipe_kind/material/diameter）の表示/非表示を切り替え
+   * @param {boolean} show
+   */
+  toggleAttributeLabels(show) {
+    this.showAttributeLabels = show;
+    this.attributeLabelEntries.forEach((entry) => {
+      if (entry?.sprite) {
+        entry.sprite.visible = show;
+      }
+    });
+    this.attributeLabelConnectors.forEach((line) => {
+      if (line) {
+        line.visible = show;
+      }
     });
   }
 
@@ -2068,6 +2127,31 @@ class CrossSectionPlane {
       entries: this.attributeLabelEntries,
       config: CROSS_SECTION_CONFIG.attributeLabel
     });
+    this.updateAttributeLabelConnectors();
+  }
+
+  /**
+   * 属性ラベルの現在位置に合わせて接続線を更新
+   */
+  updateAttributeLabelConnectors() {
+    if (!this.attributeLabelEntries || this.attributeLabelEntries.length === 0) {
+      return;
+    }
+
+    this.attributeLabelEntries.forEach((entry) => {
+      const connector = entry?.connector;
+      const sprite = entry?.sprite;
+      const anchor = entry?.anchorPosition;
+      if (!connector || !sprite || !anchor || typeof connector.geometry?.setPositions !== 'function') {
+        return;
+      }
+
+      connector.geometry.setPositions([
+        anchor.x, anchor.y, anchor.z,
+        sprite.position.x, sprite.position.y, sprite.position.z
+      ]);
+      connector.computeLineDistances?.();
+    });
   }
 
   /**
@@ -2085,6 +2169,11 @@ class CrossSectionPlane {
             child.material.resolution.set(width, height);
           }
         });
+      }
+    });
+    this.attributeLabelConnectors.forEach((line) => {
+      if (line.material && line.material.resolution) {
+        line.material.resolution.set(width, height);
       }
     });
   }
