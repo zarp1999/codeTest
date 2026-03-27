@@ -5,6 +5,12 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { CSG } from 'three-csg-ts';
 import SceneObjectRegistry from './3D/SceneObjectRegistry';
 import { Triangle, QuadtreeNodeTriangle } from './3D/QuadTreeTriangle.js';
+import {
+  ATTRIBUTE_LABEL_CONFIG,
+  createTextLabelSprite,
+  formatPipeAttributeLabel,
+  resolveAttributeLabelOverlaps
+} from './3D/CrossSectionAttributeLabel.js';
 
 const CROSS_SECTION_CONFIG = Object.freeze({
   /**
@@ -58,26 +64,7 @@ const CROSS_SECTION_CONFIG = Object.freeze({
       rotated: 0,
     },
   },
-  attributeLabel: {
-    canvasWidth: 1400,
-    canvasHeight: 256,
-    color: 'white',
-    font: 'Bold 96px Arial',
-    shadow: {
-      color: 'rgba(0, 0, 0, 0.95)',
-      blur: 12,
-      offsetX: 3,
-      offsetY: 3,
-    },
-    spriteScale: { x: 3.2, y: 0.62, z: 1 },
-    overlap: {
-      boxWidthPx: 220,
-      boxHeightPx: 28,
-      stepPx: 18,
-      maxSteps: 7,
-      groupThresholdPx: 240
-    }
-  },
+  attributeLabel: ATTRIBUTE_LABEL_CONFIG,
   /**
    * 管路交差位置に描画する縦線設定。
    */
@@ -1053,7 +1040,7 @@ class CrossSectionPlane {
               basePoint: basePointForLine,
               color: obj.material.color,
               fallbackTopY,
-              attributeLabelText: this.formatPipeAttributeLabel(objectData)
+              attributeLabelText: formatPipeAttributeLabel(objectData)
             });
 
             this.pendingCrossSections.push({
@@ -1120,7 +1107,7 @@ class CrossSectionPlane {
             basePoint: basePointForLine,
             color: obj.material.color,
             fallbackTopY: crossSectionTopY,
-            attributeLabelText: this.formatPipeAttributeLabel(objectData)
+            attributeLabelText: formatPipeAttributeLabel(objectData)
           });
 
           const endDbgTimeE = performance.now();
@@ -1169,7 +1156,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
-                attributeLabelText: this.formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
               if (basePoint == null) {
@@ -1224,7 +1211,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
-                attributeLabelText: this.formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
               if (basePoint == null) {
@@ -1345,7 +1332,7 @@ class CrossSectionPlane {
             basePoint: basePointForLine,
             color: obj.material.color,
             fallbackTopY,
-            attributeLabelText: this.formatPipeAttributeLabel(objectData)
+            attributeLabelText: formatPipeAttributeLabel(objectData)
           });
 
           this.pendingCrossSections.push({
@@ -1393,7 +1380,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
-                attributeLabelText: this.formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
               this.pendingCrossSections.push({
@@ -1548,7 +1535,11 @@ class CrossSectionPlane {
       // 断面位置の少し下に属性ラベルを配置（重なりは後段で調整）
       const attributeAnchorY = pipeTopY - 0.45;
       const attributeAnchor = new THREE.Vector3(position.x, attributeAnchorY, position.z);
-      const attributeSprite = this.createTextLabelSprite(attributeLabelText);
+      const attributeSprite = createTextLabelSprite(
+        attributeLabelText,
+        CROSS_SECTION_CONFIG.attributeLabel,
+        CROSS_SECTION_CONFIG.label.renderOrder
+      );
       attributeSprite.position.copy(attributeAnchor);
       attributeSprite.visible = this.showDepthGuides;
       this.scene.add(attributeSprite);
@@ -1609,50 +1600,6 @@ class CrossSectionPlane {
     const sprite = new THREE.Sprite(spriteMaterial);
     sprite.scale.set(spriteScale.x, spriteScale.y, spriteScale.z);
     sprite.renderOrder = renderOrder;
-    return sprite;
-  }
-
-  /**
-   * 任意テキスト用ラベルSpriteを作成（シーンに追加しない）
-   * @param {string} text
-   * @returns {THREE.Sprite}
-   */
-  createTextLabelSprite(text) {
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    const {
-      canvasWidth,
-      canvasHeight,
-      color,
-      font,
-      shadow,
-      spriteScale
-    } = CROSS_SECTION_CONFIG.attributeLabel;
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.shadowColor = shadow.color;
-    context.shadowBlur = shadow.blur;
-    context.shadowOffsetX = shadow.offsetX;
-    context.shadowOffsetY = shadow.offsetY;
-    context.fillStyle = color;
-    context.font = font;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(String(text), canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    const material = new THREE.SpriteMaterial({
-      map: texture,
-      depthTest: false,
-      depthWrite: false,
-      transparent: true
-    });
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.set(spriteScale.x, spriteScale.y, spriteScale.z);
-    sprite.renderOrder = CROSS_SECTION_CONFIG.label.renderOrder;
     return sprite;
   }
 
@@ -1788,7 +1735,11 @@ class CrossSectionPlane {
       this.drawVerticalLine(linePosition, topY, basePoint, line.color, 0, line.attributeLabelText);
     });
 
-    this.resolveAttributeLabelOverlaps();
+    resolveAttributeLabelOverlaps({
+      camera: this.camera,
+      entries: this.attributeLabelEntries,
+      config: CROSS_SECTION_CONFIG.attributeLabel
+    });
 
     const endDbgTime = performance.now();
     console.log('Draw Time: ', endDbgTime - startDbgTime, ', Size: ', uniqueSections.size, ', Ratio: ', (endDbgTime - startDbgTime) / uniqueSections.size);
@@ -2112,122 +2063,11 @@ class CrossSectionPlane {
       }
     }
 
-    this.resolveAttributeLabelOverlaps();
-  }
-
-  /**
-   * 属性表示ラベルの重なりを画面上で検出して、下方向に段差オフセットする
-   */
-  resolveAttributeLabelOverlaps() {
-    if (!this.camera || !this.attributeLabelEntries || this.attributeLabelEntries.length <= 1) {
-      return;
-    }
-
-    const width = Math.max(window.innerWidth || 1, 1);
-    const height = Math.max(window.innerHeight || 1, 1);
-    const {
-      boxWidthPx,
-      boxHeightPx,
-      stepPx,
-      maxSteps,
-      groupThresholdPx
-    } = CROSS_SECTION_CONFIG.attributeLabel.overlap;
-
-    const items = this.attributeLabelEntries
-      .map((entry) => {
-        if (!entry?.sprite || !entry?.anchorPosition) return null;
-        const projected = entry.anchorPosition.clone().project(this.camera);
-        // 画面外は重なり判定対象外（元位置を維持）
-        if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
-          return null;
-        }
-        if (projected.z < -1 || projected.z > 1) {
-          entry.sprite.position.copy(entry.anchorPosition);
-          return null;
-        }
-        const sx = (projected.x * 0.5 + 0.5) * width;
-        const sy = (-projected.y * 0.5 + 0.5) * height;
-        return { entry, sx, sy };
-      })
-      .filter(Boolean)
-      .sort((a, b) => {
-        if (Math.abs(a.sx - b.sx) < groupThresholdPx) return a.sy - b.sy;
-        return a.sx - b.sx;
-      });
-
-    const placedRects = [];
-    for (const item of items) {
-      let step = 0;
-      let rect = this.getOverlapRect(item.sx, item.sy + (step * stepPx), boxWidthPx, boxHeightPx);
-      while (step < maxSteps && this.isOverlappingAnyRect(rect, placedRects)) {
-        step += 1;
-        rect = this.getOverlapRect(item.sx, item.sy + (step * stepPx), boxWidthPx, boxHeightPx);
-      }
-      placedRects.push(rect);
-
-      const worldPerPixel = this.getWorldUnitsPerPixelAt(item.entry.anchorPosition);
-      const worldOffset = this.camera.up.clone().normalize().multiplyScalar(-step * stepPx * worldPerPixel);
-      item.entry.sprite.position.copy(item.entry.anchorPosition.clone().add(worldOffset));
-    }
-  }
-
-  getOverlapRect(screenX, screenY, widthPx, heightPx) {
-    return {
-      left: screenX - widthPx / 2,
-      right: screenX + widthPx / 2,
-      top: screenY - heightPx / 2,
-      bottom: screenY + heightPx / 2
-    };
-  }
-
-  isOverlappingAnyRect(rect, placedRects) {
-    return placedRects.some((other) => {
-      const noOverlap =
-        rect.right < other.left ||
-        rect.left > other.right ||
-        rect.bottom < other.top ||
-        rect.top > other.bottom;
-      return !noOverlap;
+    resolveAttributeLabelOverlaps({
+      camera: this.camera,
+      entries: this.attributeLabelEntries,
+      config: CROSS_SECTION_CONFIG.attributeLabel
     });
-  }
-
-  getWorldUnitsPerPixelAt(worldPosition) {
-    const viewportHeight = Math.max(window.innerHeight || 1, 1);
-    if (this.camera.isOrthographicCamera) {
-      const worldHeight = (this.camera.top - this.camera.bottom) / Math.max(this.camera.zoom || 1, 1e-6);
-      return worldHeight / viewportHeight;
-    }
-    const distance = this.camera.position.distanceTo(worldPosition);
-    const fovRad = THREE.MathUtils.degToRad(this.camera.fov || 50);
-    const visibleHeight = 2 * Math.tan(fovRad / 2) * Math.max(distance, 1e-6);
-    return visibleHeight / viewportHeight;
-  }
-
-  /**
-   * 属性表示文字列を作成
-   * 表示形式: (pipe_kind material diameter)
-   * @param {Object} objectData
-   * @returns {string}
-   */
-  formatPipeAttributeLabel(objectData) {
-    const attrs = objectData?.attributes || {};
-    const pipeKind = attrs.pipe_kind ?? '-';
-    const material = attrs.material ?? '-';
-
-    let diameterMm = null;
-    if (attrs.diameter != null && Number.isFinite(Number(attrs.diameter))) {
-      diameterMm = Number(attrs.diameter);
-    } else if (attrs.radius != null && Number.isFinite(Number(attrs.radius))) {
-      diameterMm = Number(attrs.radius) * 2;
-    }
-
-    // 既存規約に合わせて、値が小さい場合はm由来とみなしてmm換算
-    if (diameterMm != null && diameterMm <= 5) {
-      diameterMm = diameterMm * 1000;
-    }
-    const diameterText = diameterMm != null ? `${Math.round(diameterMm)}mm` : '-';
-
-    return `(${pipeKind} ${material} ${diameterText})`;
   }
 
   /**
