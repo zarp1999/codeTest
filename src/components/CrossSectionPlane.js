@@ -115,8 +115,8 @@ class CrossSectionPlane {
 
     // 断面描画情報を一時的に保存する配列
     this.pendingCrossSections = []; // {center, radius, axisDirection, color, pipeObject, crossSectionZ}
-    this.pendingVerticalLines = []; // {key, pipePosition, basePoint, color, fallbackTopY, attributeLabelText}
-    this.attributeLabelEntries = []; // {sprite, anchorPosition}
+    this.pendingVerticalLines = []; // {key, pipePosition, basePoint, color, fallbackTopY, radius, attributeLabelText}
+    this.attributeLabelEntries = []; // {sprite, anchorPosition, connectorAnchorPosition}
     this.attributeLabelConnectors = []; // 属性ラベルと断面位置を結ぶ線
 
     // 最後に生成した断面の「中心点」（4キー等で参照する用途）
@@ -1043,6 +1043,7 @@ class CrossSectionPlane {
               basePoint: basePointForLine,
               color: obj.material.color,
               fallbackTopY,
+              radius,
               attributeLabelText: formatPipeAttributeLabel(objectData)
             });
 
@@ -1110,6 +1111,7 @@ class CrossSectionPlane {
             basePoint: basePointForLine,
             color: obj.material.color,
             fallbackTopY: crossSectionTopY,
+            radius,
             attributeLabelText: formatPipeAttributeLabel(objectData)
           });
 
@@ -1159,6 +1161,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
+                radius,
                 attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
@@ -1214,6 +1217,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
+                radius,
                 attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
@@ -1335,6 +1339,7 @@ class CrossSectionPlane {
             basePoint: basePointForLine,
             color: obj.material.color,
             fallbackTopY,
+            radius,
             attributeLabelText: formatPipeAttributeLabel(objectData)
           });
 
@@ -1383,6 +1388,7 @@ class CrossSectionPlane {
                 basePoint: basePointForLine,
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
+                radius,
                 attributeLabelText: formatPipeAttributeLabel(objectData)
               });
 
@@ -1493,7 +1499,7 @@ class CrossSectionPlane {
     const lineGroup = new THREE.Group();
     lineGroup.position.set(position.x, 0, position.z);
 
-    const pipeTopY = pipeDepth + radius;
+    const pipeTopY = pipeDepth;
     const baseY = typeof basePosition === 'number' ? basePosition : basePosition.y
     const startPoint = new THREE.Vector3(0, baseY, 0);
     const endPoint = new THREE.Vector3(0, pipeTopY, 0);
@@ -1535,9 +1541,14 @@ class CrossSectionPlane {
     this.scene.add(lineGroup);
 
     if (attributeLabelText) {
-      // 断面位置の少し下に属性ラベルを配置（重なりは後段で調整）
-      const attributeAnchorY = pipeTopY - 0.45;
+      // 断面の下端よりさらに少し下へ配置（重なりは後段で調整）
+      const labelMargin = 0.15;
+      const attributeAnchorY = radius > 0
+        ? pipeTopY - (radius * 2) - labelMargin
+        : pipeTopY - 0.45;
       const attributeAnchor = new THREE.Vector3(position.x, attributeAnchorY, position.z);
+      const connectorAnchorY = radius > 0 ? (pipeTopY - (radius * 2)) : pipeTopY;
+      const connectorAnchorPosition = new THREE.Vector3(position.x, connectorAnchorY, position.z);
       const attributeSprite = createTextLabelSprite(
         attributeLabelText,
         CROSS_SECTION_CONFIG.attributeLabel,
@@ -1569,8 +1580,12 @@ class CrossSectionPlane {
         vertexColors: false,
         dashed: false
       });
+      // 属性ラベルと同様に前面描画して、近距離で管路に隠れないようにする
+      connectorMaterial.depthTest = false;
+      connectorMaterial.depthWrite = false;
       const connectorLine = new Line2(connectorGeometry, connectorMaterial);
       connectorLine.computeLineDistances();
+      connectorLine.renderOrder = CROSS_SECTION_CONFIG.label.renderOrder - 1;
       connectorLine.visible = this.showAttributeLabels;
       this.scene.add(connectorLine);
       this.attributeLabelConnectors.push(connectorLine);
@@ -1578,6 +1593,7 @@ class CrossSectionPlane {
       this.attributeLabelEntries.push({
         sprite: attributeSprite,
         anchorPosition: attributeAnchor.clone(),
+        connectorAnchorPosition: connectorAnchorPosition.clone(),
         connector: connectorLine
       });
     }
@@ -1762,7 +1778,14 @@ class CrossSectionPlane {
       } else {
         basePoint = this.getVerticalLineBaseY('normal', 0);
       }
-      this.drawVerticalLine(linePosition, topY, basePoint, line.color, 0, line.attributeLabelText);
+      this.drawVerticalLine(
+        linePosition,
+        topY,
+        basePoint,
+        line.color,
+        Number.isFinite(line.radius) ? line.radius : 0,
+        line.attributeLabelText
+      );
     });
 
     resolveAttributeLabelOverlaps({
@@ -2142,12 +2165,13 @@ class CrossSectionPlane {
       const connector = entry?.connector;
       const sprite = entry?.sprite;
       const anchor = entry?.anchorPosition;
-      if (!connector || !sprite || !anchor || typeof connector.geometry?.setPositions !== 'function') {
+      const connectorAnchor = entry?.connectorAnchorPosition || anchor;
+      if (!connector || !sprite || !connectorAnchor || typeof connector.geometry?.setPositions !== 'function') {
         return;
       }
 
       connector.geometry.setPositions([
-        anchor.x, anchor.y, anchor.z,
+        connectorAnchor.x, connectorAnchor.y, connectorAnchor.z,
         sprite.position.x, sprite.position.y, sprite.position.z
       ]);
       connector.computeLineDistances?.();

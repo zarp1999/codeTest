@@ -13,10 +13,14 @@ export const ATTRIBUTE_LABEL_CONFIG = Object.freeze({
   },
   spriteScale: { x: 3.2, y: 0.62, z: 1 },
   overlap: {
-    boxWidthPx: 220,
-    boxHeightPx: 28,
+    boxWidthPx: 320,
+    boxHeightPx: 44,
+    paddingXPx: 24,
+    paddingYPx: 12,
+    minOffsetPx: 10,
     stepPx: 18,
     maxSteps: 7,
+    maxSearchSteps: 24,
     groupThresholdPx: 240
   }
 });
@@ -81,13 +85,23 @@ export function resolveAttributeLabelOverlaps({
   viewportWidth = window.innerWidth,
   viewportHeight = window.innerHeight
 }) {
-  if (!camera || !entries || entries.length <= 1) {
+  if (!camera || !entries || entries.length === 0) {
     return;
   }
 
   const width = Math.max(viewportWidth || 1, 1);
   const height = Math.max(viewportHeight || 1, 1);
-  const { boxWidthPx, boxHeightPx, stepPx, maxSteps, groupThresholdPx } = config.overlap;
+  const {
+    boxWidthPx: minBoxWidthPx,
+    boxHeightPx: minBoxHeightPx,
+    paddingXPx = 0,
+    paddingYPx = 0,
+    minOffsetPx,
+    stepPx,
+    maxSteps,
+    maxSearchSteps = maxSteps,
+    groupThresholdPx
+  } = config.overlap;
 
   const items = entries
     .map((entry) => {
@@ -102,7 +116,13 @@ export function resolveAttributeLabelOverlaps({
       }
       const sx = (projected.x * 0.5 + 0.5) * width;
       const sy = (-projected.y * 0.5 + 0.5) * height;
-      return { entry, sx, sy };
+      const worldPerPixel = getWorldUnitsPerPixelAt(camera, entry.anchorPosition, height);
+      const safeWorldPerPixel = Math.max(worldPerPixel, 1e-6);
+      const projectedLabelWidthPx = Math.abs(entry.sprite.scale.x) / safeWorldPerPixel;
+      const projectedLabelHeightPx = Math.abs(entry.sprite.scale.y) / safeWorldPerPixel;
+      const boxWidthPx = Math.max(minBoxWidthPx, projectedLabelWidthPx + paddingXPx);
+      const boxHeightPx = Math.max(minBoxHeightPx, projectedLabelHeightPx + paddingYPx);
+      return { entry, sx, sy, worldPerPixel: safeWorldPerPixel, boxWidthPx, boxHeightPx };
     })
     .filter(Boolean)
     .sort((a, b) => {
@@ -112,16 +132,18 @@ export function resolveAttributeLabelOverlaps({
 
   const placedRects = [];
   for (const item of items) {
+    const verticalStepPx = Math.max(stepPx, item.boxHeightPx * 0.7);
+    const maxStepCount = Math.max(maxSteps, maxSearchSteps);
     let step = 0;
-    let rect = getOverlapRect(item.sx, item.sy + (step * stepPx), boxWidthPx, boxHeightPx);
-    while (step < maxSteps && isOverlappingAnyRect(rect, placedRects)) {
+    let rect = getOverlapRect(item.sx, item.sy + (step * verticalStepPx), item.boxWidthPx, item.boxHeightPx);
+    while (step < maxStepCount && isOverlappingAnyRect(rect, placedRects)) {
       step += 1;
-      rect = getOverlapRect(item.sx, item.sy + (step * stepPx), boxWidthPx, boxHeightPx);
+      rect = getOverlapRect(item.sx, item.sy + (step * verticalStepPx), item.boxWidthPx, item.boxHeightPx);
     }
     placedRects.push(rect);
 
-    const worldPerPixel = getWorldUnitsPerPixelAt(camera, item.entry.anchorPosition, height);
-    const worldOffset = camera.up.clone().normalize().multiplyScalar(-step * stepPx * worldPerPixel);
+    const totalOffsetPx = minOffsetPx + (step * verticalStepPx);
+    const worldOffset = camera.up.clone().normalize().multiplyScalar(-totalOffsetPx * item.worldPerPixel);
     item.entry.sprite.position.copy(item.entry.anchorPosition.clone().add(worldOffset));
   }
 }
