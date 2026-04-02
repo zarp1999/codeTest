@@ -49,14 +49,14 @@ const createCityObjects = (obj,
     } else if (geom.vertices && Array.isArray(geom.vertices) && geom.vertices.length > 0) {
       const vertices3D = geom.vertices.map(vertex => {
         const [x, y, z] = vertex;
-        return new THREE.Vector3(x, z, y);
+        return new THREE.Vector3(x, z, -y);
       });
       const boundingBox = new THREE.Box3().setFromPoints(vertices3D);
       const center = boundingBox.getCenter(new THREE.Vector3());
       mesh.position.copy(center);
     } else {
       let center = geom.center || geom.position || geom.start || geom.vertices?.[0] || [0, 0, 0];
-      mesh.position.set(center[0], center[2], center[1]);
+      mesh.position.set(center[0], center[2], -center[1]);
     }
   } else {
     let center = geom.center || geom.position || geom.start || geom.vertices?.[0] || [0, 0, 0];
@@ -351,7 +351,7 @@ const createNonePipeGeometry = (shapeTypeName, geom, obj) => {
       // boundariesは使わず、頂点群の凸包（QuickHull相当）
       const vertices3D = geom.vertices.map(vertex => {
         const [x, y, z] = vertex;
-        return new THREE.Vector3(x, z, y);
+        return new THREE.Vector3(x, z, -y);
       });
  
       const boundingBox = new THREE.Box3().setFromPoints(vertices3D);

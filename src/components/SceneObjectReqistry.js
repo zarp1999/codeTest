@@ -153,7 +153,7 @@ export default class SceneObjectRegistry {
       throw new Error("Polyhedronの追加に必要な頂点数が不足しています。");
     }
 
-    // Polyhedronのデータ座標 [x, y, z] -> Three.js (x, z, y)
+    // Polyhedronのデータ座標 [x, y, z] -> Three.js (x, z, -y)
     // よって平面幅は data(x, y) で扱う。data(z) は高さ（鉛直）。
     const xs = vertices.map((v) => toNum(v[0]));
     const ys = vertices.map((v) => toNum(v[1]));
@@ -169,7 +169,7 @@ export default class SceneObjectRegistry {
     const scaleXY = targetWidth / baseWidth;
 
     const targetCenterX = toNum(p1[0], centerX);
-    const targetCenterY = toNum(p1[2], centerY);
+    const targetCenterY = toNum(-p1[2], centerY);
 
     geometry.vertices = vertices.map((v) => {
       const x = toNum(v[0]);
@@ -463,10 +463,10 @@ export default class SceneObjectRegistry {
         // 2倍移動を避けるため Δ/2 を頂点へ適用
         const s = deltaWorld.multiplyScalar(0.5);
 
-        // Polyhedronデータ頂点 -> Three.js頂点は [x,y,z] -> (x,z,y) なので、
-        // world Δ(x,y,z) を data Δ(x, y, z) へ: [dx, dz, dy]
+        // Polyhedronデータ頂点 -> Three.js頂点は [x,y,z] -> (x,z,-y) なので、
+        // world Δ(x,y,z) を data Δ(x, y, z) へ: [dx, -dz, dy]
         const dxData = s.x;
-        const dyData = s.z;
+        const dyData = -s.z;
         const dzData = s.y;
 
         if (Array.isArray(editedGeometry?.vertices)) {
@@ -673,7 +673,7 @@ export default class SceneObjectRegistry {
             const scaleX = targetWidth / currentSize.x;
 
             // 中心を基準にX方向にスケール変換
-            // データ座標系 [x, y, z] → Three.js (x, z, y)
+            // データ座標系 [x, y, z] → Three.js (x, z, -y)
             // データの v[0] がThree.jsの x (東西) に対応
             if (Array.isArray(editedGeometry?.vertices)) {
               editedGeometry.vertices = editedGeometry.vertices.map((v) => {
@@ -710,7 +710,7 @@ export default class SceneObjectRegistry {
             const scaleY = targetHeight / currentSize.y;
 
             // 中心を基準にY方向にスケール変換
-            // データ座標系 [x, y, z] → Three.js (x, z, y)
+            // データ座標系 [x, y, z] → Three.js (x, z, -y)
             // データの v[2] がThree.jsの y (鉛直) に対応
             if (Array.isArray(editedGeometry?.vertices)) {
               editedGeometry.vertices = editedGeometry.vertices.map((v) => {
@@ -759,7 +759,7 @@ export default class SceneObjectRegistry {
             const scale = targetLength / maxLength;
 
             // 中心を基準に最長軸方向にスケール変換
-            // データ座標系 [x, y, z] → Three.js (x, z, y)
+            // データ座標系 [x, y, z] → Three.js (x, z, -y)
             if (Array.isArray(editedGeometry?.vertices)) {
               editedGeometry.vertices = editedGeometry.vertices.map((v) => {
                 if (!Array.isArray(v) || v.length < 3) return v;
@@ -774,9 +774,10 @@ export default class SceneObjectRegistry {
                   const offsetY = (Number(v[2]) || 0) - centerWorld.y;
                   result[2] = centerWorld.y + offsetY * scale;
                 } else {
-                  // Z方向（南北）: データの v[1] がThree.jsの z
-                  const offsetZ = (Number(v[1]) || 0) - centerWorld.z;
-                  result[1] = centerWorld.z + offsetZ * scale;
+                  // Z方向（南北）: データの v[1] は Three.js の -z に対応
+                  const centerDataY = -centerWorld.z;
+                  const offsetDataY = (Number(v[1]) || 0) - centerDataY;
+                  result[1] = centerDataY + offsetDataY * scale;
                 }
 
                 return result;

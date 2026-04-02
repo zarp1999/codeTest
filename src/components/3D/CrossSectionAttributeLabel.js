@@ -21,6 +21,7 @@ export const ATTRIBUTE_LABEL_CONFIG = Object.freeze({
     stepPx: 18,
     maxSteps: 7,
     maxSearchSteps: 24,
+    maxWorldOffset: 1.2,
     groupThresholdPx: 240
   }
 });
@@ -100,6 +101,7 @@ export function resolveAttributeLabelOverlaps({
     stepPx,
     maxSteps,
     maxSearchSteps = maxSteps,
+    maxWorldOffset = Infinity,
     groupThresholdPx
   } = config.overlap;
 

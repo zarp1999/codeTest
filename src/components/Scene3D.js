@@ -1473,10 +1473,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       // Polyhedron（shape_type === 25）の場合
       if (shapeTypeName === 'Polyhedron' || originalGeom.type === 'Polyhedron') {
         if (originalGeom.vertices && Array.isArray(originalGeom.vertices) && originalGeom.vertices.length > 0) {
-          // verticesがある場合: 各頂点を[x, z, y]に変換してAABBを計算し、その中心を位置とする
+          // verticesがある場合: 各頂点を[x, z, -y]に変換してAABBを計算し、その中心を位置とする
           const vertices3D = originalGeom.vertices.map(vertex => {
             const [x, y, z] = vertex;
-            return new THREE.Vector3(x, z, y);
+            return new THREE.Vector3(x, z, -y);
           });
           const boundingBox = new THREE.Box3().setFromPoints(vertices3D);
           const center = boundingBox.getCenter(new THREE.Vector3());
@@ -1484,7 +1484,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         } else {
           // verticesがない場合: centerまたはpositionを使用
           let center = originalGeom.center || originalGeom.position || originalGeom.start || originalGeom.vertices?.[0] || [0, 0, 0];
-          mesh.position.set(center[0], center[2], center[1]);
+          mesh.position.set(center[0], center[2], -center[1]);
         }
         // 回転をリセット
         mesh.quaternion.set(0, 0, 0, 1);
@@ -3098,6 +3098,17 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     if (skyComponentRef.current) {
       skyComponentRef.current.setBackgroundVisible(showBackground);
     }
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (showBackground) {
+      scene.fog = new THREE.Fog(
+        SCENE3D_CONFIG.scene.fog.color,
+        SCENE3D_CONFIG.scene.fog.near,
+        SCENE3D_CONFIG.scene.fog.far
+      );
+    } else {
+      scene.fog = null;
+    }
   }, [showBackground]);
 
   // 断面自動作成モードの状態をrefに同期
@@ -3160,6 +3171,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           const geo = terrainViewerRef.current.terrainMeshRef?.geometry;
           crossSectionRef.current.createCrossSection(selectedPipe, clickPoint, objectRegistry, geo, gridAngle, true);
           crossSectionRef.current.toggleCrossSections(true);
+          if (typeof crossSectionRef.current.toggleAttributeLabels === 'function') {
+            crossSectionRef.current.toggleAttributeLabels(true);
+          }
           // setShowPipes(false);
 
           // カメラを断面平面に正対させる
@@ -3189,6 +3203,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       crossSectionRef.current.clearCrossSectionTerrainLine();
       crossSectionRef.current.clear();
       crossSectionRef.current.toggleCrossSections(false);
+      if (typeof crossSectionRef.current.toggleAttributeLabels === 'function') {
+        crossSectionRef.current.toggleAttributeLabels(false);
+      }
       // setShowPipes(true);
     }
   }, [sectionViewMode, currentSectionIndex, generatedSections]);
