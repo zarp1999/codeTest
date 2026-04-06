@@ -12,6 +12,7 @@ import JGWImageLoader from './JGWImageLoader';
 import PotreePointCloudViewer from './PotreePointCloudViewer';
 import GeoTerrainWithJGWTexture from './GeoTerrainWithJGWTexture';
 import './Scene3D.css';
+import CameraBookmarkPanel from './CameraBookmarkPanel';
 import createCityObjects, { isPipeObject } from './Geometry.js';
 import createQuadTreeNodes from './3D/QuadTree.js';
 import SCENE3D_CONFIG from './Scene3DConfig.js';
@@ -1472,23 +1473,19 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       
       // Polyhedron（shape_type === 25）の場合
       if (shapeTypeName === 'Polyhedron' || originalGeom.type === 'Polyhedron') {
-        if (originalGeom.vertices && Array.isArray(originalGeom.vertices) && originalGeom.vertices.length > 0) {
-          // verticesがある場合: 各頂点を[x, z, -y]に変換してAABBを計算し、その中心を位置とする
-          const vertices3D = originalGeom.vertices.map(vertex => {
-            const [x, y, z] = vertex;
-            return new THREE.Vector3(x, z, -y);
-          });
-          const boundingBox = new THREE.Box3().setFromPoints(vertices3D);
-          const center = boundingBox.getCenter(new THREE.Vector3());
-          mesh.position.copy(center);
-        } else {
-          // verticesがない場合: centerまたはpositionを使用
-          let center = originalGeom.center || originalGeom.position || originalGeom.start || originalGeom.vertices?.[0] || [0, 0, 0];
-          mesh.position.set(center[0], center[2], -center[1]);
+        // Polyhedronは入力編集で頂点形状自体が変わるため、元データから再生成して復元する。
+        deleteMesh(mesh);
+        const restoredMesh = createCityObjects(originalData, cityObjectState.shapeTypeMap);
+        if (restoredMesh) {
+          sceneRef.current.add(restoredMesh);
+          objectsRef.current[objectKey] = restoredMesh;
+          applyStyle(restoredMesh);
+          setSelectedObject(restoredMesh.userData.objectData);
+          selectedMeshRef.current = restoredMesh;
+          showOutline(restoredMesh);
+          return true;
         }
-        // 回転をリセット
-        mesh.quaternion.set(0, 0, 0, 1);
-        mesh.scale.set(1, 1, 1);
+        return false;
       } else {
         // ExtrudeGeometry（shape_type === 21, "Extrusion"）やその他の形状
         let originalCenter = originalGeom.center || originalGeom.position || originalGeom.start || originalGeom.vertices?.[0] || [0, 0, 0];
@@ -2727,6 +2724,26 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     }
   }
 
+  const getCurrentCameraBookmark = () => {
+    const activeCamera = cameraRef.current;
+    if (!activeCamera) return null;
+
+    const pos = activeCamera.position;
+    const eulerYXZ = new THREE.Euler().setFromQuaternion(activeCamera.quaternion, 'YXZ');
+    const rollDeg = THREE.MathUtils.radToDeg(eulerYXZ.z);
+    const pitchDeg = -THREE.MathUtils.radToDeg(eulerYXZ.x);
+    const yawDeg = THREE.MathUtils.radToDeg(eulerYXZ.y - Math.PI / 2);
+
+    return {
+      x: parseFloat(pos.x),
+      y: parseFloat(pos.y),
+      z: parseFloat(-pos.z),
+      roll: parseFloat(rollDeg),
+      pitch: parseFloat(pitchDeg),
+      yaw: parseFloat(yawDeg)
+    };
+  };
+
   // オブジェクトの作成（初回のみ）
   useEffect(() => {
     if (!sceneRef.current || !cityJsonData || !layerData) return;
@@ -3275,6 +3292,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           </div>
         </div>
       )}
+
+      <CameraBookmarkPanel onRequestCurrentCamera={getCurrentCameraBookmark} />
 
       {/* 画面下部の正射投影モード表示 */}
       {activeCameraTypeRef.current === 'orthographic' && (

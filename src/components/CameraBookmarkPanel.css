@@ -1,0 +1,87 @@
+.camera-bookmark-panel {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 15;
+  width: 430px;
+  max-height: 300px;
+  padding: 10px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  backdrop-filter: blur(2px);
+}
+
+.camera-bookmark-title {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.camera-bookmark-table-wrap {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.camera-bookmark-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.camera-bookmark-table th,
+.camera-bookmark-table td {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 4px;
+}
+
+.camera-bookmark-table th {
+  background: rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+}
+
+.camera-bookmark-table tbody tr {
+  cursor: pointer;
+}
+
+.camera-bookmark-table tbody tr.selected {
+  background: rgba(99, 179, 237, 0.35);
+}
+
+.camera-bookmark-table input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.camera-bookmark-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.camera-bookmark-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.camera-bookmark-actions button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.camera-bookmark-status {
+  margin-top: 8px;
+  min-height: 16px;
+  font-size: 11px;
+  opacity: 0.85;
+}

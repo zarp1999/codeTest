@@ -460,8 +460,8 @@ export default class SceneObjectRegistry {
       const hasDelta = deltaWorld.lengthSq() > 1e-12;
 
       if (hasDelta) {
-        // 2倍移動を避けるため Δ/2 を頂点へ適用
-        const s = deltaWorld.multiplyScalar(0.5);
+        // ローカル原点化済みPolyhedronでは、ワールド差分Δをそのまま頂点へ適用する
+        const s = deltaWorld.clone();
 
         // Polyhedronデータ頂点 -> Three.js頂点は [x,y,z] -> (x,z,-y) なので、
         // world Δ(x,y,z) を data Δ(x, y, z) へ: [dx, -dz, dy]
