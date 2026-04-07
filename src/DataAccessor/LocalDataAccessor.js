@@ -64,6 +64,20 @@ class LocalDataAccessor extends DataAccessor {
     const jsonData = await this.fetchData( '/user_pos_develop.json' )
     return jsonData[0];
   }
+
+  async fetchCameraBookmarkList() {
+    try {
+      return await this.fetchData('/camera_list.json');
+    } catch (_) {
+      // 既存ファイル名との互換
+      return this.fetchData('/Camera_list.json');
+    }
+  }
+
+  async saveCameraBookmarkList(bookmarks) {
+    // スタンドアロンでは public 配下を直接更新できないため、JSON ダウンロードで保存
+    this.download_as_Json(bookmarks, 'camera_list.json');
+  }
  
   async updateRegionUserPositionData( userId, regionPos, height, roll, pitch, yaw ) {
     console.log("スタンドアロンモードでは、位置更新に対応していません。");

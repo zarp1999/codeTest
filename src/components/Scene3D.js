@@ -2738,10 +2738,48 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       x: parseFloat(pos.x),
       y: parseFloat(pos.y),
       z: parseFloat(-pos.z),
-      roll: parseFloat(rollDeg),
-      pitch: parseFloat(pitchDeg),
-      yaw: parseFloat(yawDeg)
+      roll: rollDeg,
+      pitch: pitchDeg,
+      yaw: yawDeg,
+      height: pos.y,
+      region_position: `POINT(${parseFloat(pos.x)} ${parseFloat(-pos.z)})`,
     };
+  };
+
+  const jumpToCameraBookmark = (cameraBookmark) => {
+    if (!cameraBookmark) return;
+    const activeCamera = cameraRef.current;
+    if (!activeCamera) return;
+
+    const x = Number(cameraBookmark.x);
+    const y = Number(cameraBookmark.y);
+    const z = Number(cameraBookmark.z);
+    const rollDeg = Number(cameraBookmark.roll);
+    const pitchDeg = Number(cameraBookmark.pitch);
+    const yawDeg = Number(cameraBookmark.yaw);
+
+    if ([x, y, z].every((v) => Number.isFinite(v))) {
+      activeCamera.position.set(x, y, -z);
+    }
+
+    const yaw = THREE.MathUtils.degToRad(Number.isFinite(yawDeg) ? yawDeg + 90 : 90);
+    const pitch = THREE.MathUtils.degToRad(Number.isFinite(pitchDeg) ? -pitchDeg : 0);
+    const roll = THREE.MathUtils.degToRad(Number.isFinite(rollDeg) ? rollDeg : 0);
+    activeCamera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+    activeCamera.updateMatrixWorld();
+
+    const controls = controlsRef.current;
+    if (controls) {
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(activeCamera.quaternion);
+      const target = activeCamera.position.clone().add(forward.multiplyScalar(10));
+      controls.target.copy(target);
+      controls.update();
+    }
+
+    updateTargetOffsetFromCamera(activeCamera);
+    updateCameraInfoFromCamera(activeCamera);
+    syncCamerasFromActive(activeCamera);
+    updateOrthographicFrustum(activeCamera);
   };
 
   // オブジェクトの作成（初回のみ）
@@ -3293,7 +3331,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         </div>
       )}
 
-      <CameraBookmarkPanel onRequestCurrentCamera={getCurrentCameraBookmark} />
+      <CameraBookmarkPanel
+        onRequestCurrentCamera={getCurrentCameraBookmark}
+        onJumpToBookmark={jumpToCameraBookmark}
+        accessor={accessor}
+      />
 
       {/* 画面下部の正射投影モード表示 */}
       {activeCameraTypeRef.current === 'orthographic' && (

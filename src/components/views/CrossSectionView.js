@@ -11,7 +11,7 @@ import * as THREE from 'three';
  * - 左上のUIパネルが異なる（断面図生成機能）
  * - 将来的に断面図生成専用の機能を追加予定
  */
-function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl }) {
+function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl, accessor }) {
   const config = useAppConfig();
   const mode = config?.mode || 'normal';
   
@@ -467,6 +467,7 @@ function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, 
         generatedSections={generatedSections}
         sectionViewMode={sectionViewMode}
         currentSectionIndex={currentSectionIndex}
+        accessor={accessor}
       />
 
       {/* 画面下部に断面名のリストを表示 */}

@@ -50,20 +50,25 @@ const normalizeLoadedBookmark = (item, index) => {
 const toPersistedJson = (bookmarks) => {
   return bookmarks.map((b) => ({
     id: b.id,
-    memo: b.memo,
-    createdAt: b.createdAt,
-    camera: {
-      x: b.camera.x,
-      y: b.camera.y,
-      z: b.camera.z,
-      roll: b.camera.roll,
+    camera_info: {
+      created_at: b.createdAt,
+      global_position: '',
+      id: 1,
       pitch: b.camera.pitch,
+      reqion_hight: b.camera.height,
+      reqion_id: '',
+      reqion_position: b.camera.region_position,
+      reqion_ref_point: '',
+      roll: b.camera.roll,
+      updated_at: '',
+      user_id: 1,
       yaw: b.camera.yaw
-    }
+    },
+    memo: b.memo
   }));
 };
 
-function CameraBookmarkPanel({ onRequestCurrentCamera }) {
+function CameraBookmarkPanel({ onRequestCurrentCamera, onJumpToBookmark, accessor }) {
   const [bookmarks, setBookmarks] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [status, setStatus] = useState('');
@@ -73,19 +78,32 @@ function CameraBookmarkPanel({ onRequestCurrentCamera }) {
 
     const load = async () => {
       let loaded = null;
-      const paths = [DEFAULT_BOOKMARKS_PATH, FALLBACK_BOOKMARKS_PATH];
 
-      for (const path of paths) {
+      if (accessor && typeof accessor.fetchCameraBookmarkList === 'function') {
         try {
-          const res = await fetch(path, { cache: 'no-store' });
-          if (!res.ok) continue;
-          const json = await res.json();
+          const json = await accessor.fetchCameraBookmarkList();
           if (Array.isArray(json)) {
             loaded = json;
-            break;
           }
         } catch (_) {
-          // try next path
+          // accessor 取得失敗時は fetch フォールバック
+        }
+      }
+
+      if (!Array.isArray(loaded)) {
+        const paths = [DEFAULT_BOOKMARKS_PATH, FALLBACK_BOOKMARKS_PATH];
+        for (const path of paths) {
+          try {
+            const res = await fetch(path, { cache: 'no-store' });
+            if (!res.ok) continue;
+            const json = await res.json();
+            if (Array.isArray(json)) {
+              loaded = json;
+              break;
+            }
+          } catch (_) {
+            // try next path
+          }
         }
       }
 
@@ -106,7 +124,7 @@ function CameraBookmarkPanel({ onRequestCurrentCamera }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accessor]);
 
   const nextId = useMemo(() => {
     if (bookmarks.length === 0) return 1;
@@ -147,9 +165,27 @@ function CameraBookmarkPanel({ onRequestCurrentCamera }) {
     );
   };
 
-  const handleRegister = () => {
+  const handleRowClick = (bookmark) => {
+    setSelectedId(bookmark.id);
+    if (typeof onJumpToBookmark === 'function') {
+      onJumpToBookmark(bookmark.camera);
+      setStatus(`ID ${bookmark.id} の視点へ移動しました`);
+    }
+  };
+
+  const handleRegister = async () => {
     const payload = toPersistedJson(bookmarks);
     const jsonText = JSON.stringify(payload, null, 2);
+
+    if (accessor && typeof accessor.saveCameraBookmarkList === 'function') {
+      try {
+        await accessor.saveCameraBookmarkList(payload);
+        setStatus('一覧全件を accessor 経由で保存しました');
+        return;
+      } catch (_) {
+        // accessor 保存失敗時はファイル保存にフォールバック
+      }
+    }
 
     const saveByDownload = () => {
       const blob = new Blob([jsonText], { type: 'application/json' });
@@ -206,7 +242,7 @@ function CameraBookmarkPanel({ onRequestCurrentCamera }) {
               <tr
                 key={b.id}
                 className={selectedId === b.id ? 'selected' : ''}
-                onClick={() => setSelectedId(b.id)}
+                onClick={() => handleRowClick(b)}
               >
                 <td>{b.id}</td>
                 <td>

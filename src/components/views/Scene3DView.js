@@ -9,7 +9,7 @@ import './Scene3DView.css';
  * - 3D表示、管路情報、距離計測機能を提供
  * - GeoTIFF地形表示機能を統合
  */
-function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl }) {
+function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl, accessor }) {
   const config = useAppConfig();
   const mode = config?.mode || 'normal';
   const [terrainVisible, setTerrainVisible] = useState(mode === 'elevation');
@@ -64,6 +64,7 @@ function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourc
         potreeMetadataUrl={potreeMetadataUrl}
         terrainVisible={terrainVisible}
         terrainOpacity={terrainOpacity}
+        accessor={accessor}
       />
     </div>
   );
