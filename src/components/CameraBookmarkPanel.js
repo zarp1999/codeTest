@@ -16,7 +16,19 @@ const toNumberOrDefault = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+const toPointWktFromCamera = (camera) => {
+  // 内部の camera(x,z) を保存用の WKT "POINT(x z)" へ変換する
+  const x = Number(camera?.x);
+  const z = Number(camera?.z);
+  if (Number.isFinite(x) && Number.isFinite(z)) {
+    return `POINT(${x} ${z})`;
+  }
+  const existing = camera?.region_position;
+  return typeof existing === 'string' ? existing : 'POINT(0 0)';
+};
+
 const normalizeLoadedBookmark = (item, index) => {
+  // 旧形式(camera_info)・新形式(camera)のどちらでも読めるように正規化する
   const cameraInfo = item?.camera ?? item?.camera_info ?? {};
   const regionWkt = cameraInfo.reqion_position ?? cameraInfo.region_position;
   const regionPoint = parsePointWkt(regionWkt);
@@ -48,21 +60,22 @@ const normalizeLoadedBookmark = (item, index) => {
 };
 
 const toPersistedJson = (bookmarks) => {
+  // 既存の camera_list.json 互換を維持した保存形式へ変換する
   return bookmarks.map((b) => ({
     id: b.id,
     camera_info: {
       created_at: b.createdAt,
       global_position: '',
-      id: 1,
-      pitch: b.camera.pitch,
-      reqion_hight: b.camera.height,
-      reqion_id: '',
-      reqion_position: b.camera.region_position,
-      reqion_ref_point: '',
-      roll: b.camera.roll,
+      id: b.id,
+      pitch: toNumberOrDefault(b.camera?.pitch, 0),
+      region_hight: toNumberOrDefault(b.camera?.y ?? b.camera?.height, 0),
+      region_id: 1,
+      region_position: toPointWktFromCamera(b.camera),
+      region_ref_point: '',
+      roll: toNumberOrDefault(b.camera?.roll, 0),
       updated_at: '',
       user_id: 1,
-      yaw: b.camera.yaw
+      yaw: toNumberOrDefault(b.camera?.yaw, 0)
     },
     memo: b.memo
   }));
@@ -79,6 +92,7 @@ function CameraBookmarkPanel({ onRequestCurrentCamera, onJumpToBookmark, accesso
     const load = async () => {
       let loaded = null;
 
+      // accessor があればそこを正とし、環境差分は accessor 実装側で吸収する
       if (accessor && typeof accessor.fetchCameraBookmarkList === 'function') {
         try {
           const json = await accessor.fetchCameraBookmarkList();
@@ -91,6 +105,7 @@ function CameraBookmarkPanel({ onRequestCurrentCamera, onJumpToBookmark, accesso
       }
 
       if (!Array.isArray(loaded)) {
+        // accessor が未実装/失敗時のみ静的JSON読込へフォールバック
         const paths = [DEFAULT_BOOKMARKS_PATH, FALLBACK_BOOKMARKS_PATH];
         for (const path of paths) {
           try {
@@ -132,6 +147,7 @@ function CameraBookmarkPanel({ onRequestCurrentCamera, onJumpToBookmark, accesso
   }, [bookmarks]);
 
   const handleAdd = () => {
+    // 追加時点のカメラ姿勢をそのまま新規ブックマーク化する
     const camera = typeof onRequestCurrentCamera === 'function' ? onRequestCurrentCamera() : null;
     if (!camera) {
       setStatus('カメラ情報を取得できませんでした');
@@ -168,12 +184,14 @@ function CameraBookmarkPanel({ onRequestCurrentCamera, onJumpToBookmark, accesso
   const handleRowClick = (bookmark) => {
     setSelectedId(bookmark.id);
     if (typeof onJumpToBookmark === 'function') {
+      // 行選択と同時に Scene3D へ「この視点へ移動」を通知する
       onJumpToBookmark(bookmark.camera);
       setStatus(`ID ${bookmark.id} の視点へ移動しました`);
     }
   };
 
   const handleRegister = async () => {
+    // 一覧全件を保存用フォーマットへ変換して保存する
     const payload = toPersistedJson(bookmarks);
     const jsonText = JSON.stringify(payload, null, 2);
 

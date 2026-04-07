@@ -2725,6 +2725,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   }
 
   const getCurrentCameraBookmark = () => {
+    // 現在のThree.jsカメラを、ブックマーク保存用の座標/角度へ変換する
     const activeCamera = cameraRef.current;
     if (!activeCamera) return null;
 
@@ -2747,6 +2748,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   };
 
   const jumpToCameraBookmark = (cameraBookmark) => {
+    // ブックマーク行から受け取った視点情報をThree.jsカメラへ復元する
     if (!cameraBookmark) return;
     const activeCamera = cameraRef.current;
     if (!activeCamera) return;
@@ -2759,9 +2761,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const yawDeg = Number(cameraBookmark.yaw);
 
     if ([x, y, z].every((v) => Number.isFinite(v))) {
+      // 保存時は z が画面表示座標なので、Three.js空間へ戻す際に符号反転する
       activeCamera.position.set(x, y, -z);
     }
 
+    // 保存時の角度定義(yaw=Y-90, pitch=-X)を逆変換して適用する
     const yaw = THREE.MathUtils.degToRad(Number.isFinite(yawDeg) ? yawDeg + 90 : 90);
     const pitch = THREE.MathUtils.degToRad(Number.isFinite(pitchDeg) ? -pitchDeg : 0);
     const roll = THREE.MathUtils.degToRad(Number.isFinite(rollDeg) ? rollDeg : 0);
