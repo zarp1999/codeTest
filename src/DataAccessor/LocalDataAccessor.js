@@ -31,7 +31,7 @@ class LocalDataAccessor extends DataAccessor {
   }
  
   async addCityJsonData( newObjectData ) {
-    console.log('スタンドアロンモードでは、オブジェクト追加には対応していません。');
+    return axios.post('http://localhost:3000/api/v1/city_json', newObjectData);
   }
  
   async fetchShapeTypesData() {
