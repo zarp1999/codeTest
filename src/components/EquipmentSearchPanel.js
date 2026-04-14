@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './EquipmentSearchPanel.css';
 
-function EquipmentSearchPanel({ onSearch, onFocusResult }) {
-  const [keyword, setKeyword] = useState('');
+function EquipmentSearchPanel({
+  onSearch,
+  onFocusResult,
+  hideInput = false,
+  externalKeyword = '',
+  searchRequestId = 0
+}) {
+  const [keyword, setKeyword] = useState(externalKeyword || '');
   const [results, setResults] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
   const [status, setStatus] = useState('');
 
-  const handleSearch = () => {
-    const query = keyword.trim();
+  const handleSearch = (queryOverride = null) => {
+    const query = String(queryOverride ?? keyword).trim();
     if (!query) {
       setResults([]);
       setSelectedKey(null);
@@ -23,6 +29,15 @@ function EquipmentSearchPanel({ onSearch, onFocusResult }) {
     setStatus(`${searched.length} 件ヒットしました`);
   };
 
+  useEffect(() => {
+    setKeyword(externalKeyword || '');
+  }, [externalKeyword]);
+
+  useEffect(() => {
+    if (!searchRequestId) return;
+    handleSearch(externalKeyword);
+  }, [searchRequestId]);
+
   const handleRowClick = (row) => {
     setSelectedKey(row.key);
     const moved = onFocusResult?.(row.key);
@@ -36,20 +51,22 @@ function EquipmentSearchPanel({ onSearch, onFocusResult }) {
   return (
     <div className="equipment-search-panel">
       <div className="equipment-search-title">◆設備検索</div>
-      <div className="equipment-search-input-row">
-        <input
-          type="text"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleSearch();
-            }
-          }}
-          placeholder="キーワードを入力して Enter"
-        />
-      </div>
+      {!hideInput && (
+        <div className="equipment-search-input-row">
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearch();
+              }
+            }}
+            placeholder="キーワードを入力して Enter"
+          />
+        </div>
+      )}
       <div className="equipment-search-table-wrap">
         <table className="equipment-search-table">
           <thead>

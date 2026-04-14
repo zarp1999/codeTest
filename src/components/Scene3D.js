@@ -516,6 +516,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showBackground, setShowBackground] = useState(!hideBackground);
   const [showCameraBookmarks, setShowCameraBookmarks] = useState(false);
   const [showEquipmentSearchPanel, setShowEquipmentSearchPanel] = useState(false);
+  const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
+  const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
 
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
@@ -3411,13 +3413,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         >
           {showCameraBookmarks ? 'カメラを閉じる' : 'カメラ'}
         </button>
-        <button
-          type="button"
-          className="scene-top-right-button"
-          onClick={() => setShowEquipmentSearchPanel((prev) => !prev)}
-        >
-          {showEquipmentSearchPanel ? '検索窓を閉じる' : '検索窓'}
-        </button>
+        <input
+          type="text"
+          className="scene-top-right-search-input"
+          value={equipmentSearchKeyword}
+          onChange={(e) => setEquipmentSearchKeyword(e.target.value)}
+          placeholder="検索窓"
+          onFocus={() => setShowEquipmentSearchPanel(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              setShowEquipmentSearchPanel(true);
+              setEquipmentSearchRequestId((prev) => prev + 1);
+            }
+          }}
+        />
       </div>
 
       {showCameraBookmarks && (
@@ -3432,6 +3442,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         <EquipmentSearchPanel
           onSearch={searchEquipmentByKeyword}
           onFocusResult={panCameraToEquipment}
+          hideInput
+          externalKeyword={equipmentSearchKeyword}
+          searchRequestId={equipmentSearchRequestId}
         />
       )}
 

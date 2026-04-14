@@ -86,3 +86,20 @@
 .scene-top-right-button:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+.scene-top-right-search-input {
+  z-index: 16;
+  width: 140px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  backdrop-filter: blur(2px);
+}
+
+.scene-top-right-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.8);
+}
