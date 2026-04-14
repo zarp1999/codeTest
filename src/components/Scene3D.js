@@ -519,6 +519,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
   const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
 
+  const handleToggleCameraPanel = () => {
+    setShowCameraBookmarks((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowEquipmentSearchPanel(false);
+      }
+      return next;
+    });
+  };
+
+  const handleOpenSearchPanel = () => {
+    setShowEquipmentSearchPanel(true);
+    setShowCameraBookmarks(false);
+  };
+
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
 
@@ -2797,7 +2812,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     updateOrthographicFrustum(activeCamera);
   };
 
+  /**
+   * 検索キーワードで設備一覧を部分一致検索する。
+   * 対象は feature_id / material / pipe_type(pipe_kind互換)。
+   *
+   * @param {string} keyword 検索語
+   * @returns {{key: string, featureId: string, material: string, pipeType: string}[]} 検索結果行
+   */
   const searchEquipmentByKeyword = (keyword) => {
+    // 右上の検索窓から渡されたキーワードで、シーン上の全設備を部分一致検索する
     const query = String(keyword ?? '').trim().toLowerCase();
     if (!query) return [];
 
@@ -2818,6 +2841,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       ));
   };
 
+  /**
+   * 対象設備へカメラを平行移動して画面中央へ寄せる。
+   * カメラ姿勢は維持し、camera位置とcontrols.targetを同量移動する。
+   *
+   * @param {string} objectKey objectsRef に登録された設備キー
+   * @returns {boolean} 移動できた場合 true
+   */
   const panCameraToEquipment = (objectKey) => {
     const mesh = objectsRef.current?.[objectKey];
     const activeCamera = cameraRef.current;
@@ -2841,6 +2871,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const delta = center.clone().sub(controls.target);
     if (!Number.isFinite(delta.length())) return false;
 
+    // カメラとtargetを同じ差分だけ平行移動し、向きは保ったまま対象を画面中央へ寄せる
     activeCamera.position.add(delta);
     controls.target.add(delta);
     controls.update();
@@ -3408,22 +3439,23 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         <button type="button" className="scene-top-right-button">設備</button>
         <button
           type="button"
-          className="scene-top-right-button"
-          onClick={() => setShowCameraBookmarks((prev) => !prev)}
+          className={`scene-top-right-button ${showCameraBookmarks ? 'active' : ''}`}
+          onClick={handleToggleCameraPanel}
         >
           {showCameraBookmarks ? 'カメラを閉じる' : 'カメラ'}
         </button>
         <input
           type="text"
-          className="scene-top-right-search-input"
+          className={`scene-top-right-search-input ${showEquipmentSearchPanel ? 'active' : ''}`}
           value={equipmentSearchKeyword}
           onChange={(e) => setEquipmentSearchKeyword(e.target.value)}
           placeholder="検索窓"
-          onFocus={() => setShowEquipmentSearchPanel(true)}
+          onFocus={handleOpenSearchPanel}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              setShowEquipmentSearchPanel(true);
+              // Enter押下をトリガーに、同一キーワードでも再検索できるようrequestIdを進める
+              handleOpenSearchPanel();
               setEquipmentSearchRequestId((prev) => prev + 1);
             }
           }}

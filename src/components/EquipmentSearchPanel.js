@@ -1,6 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import './EquipmentSearchPanel.css';
 
+/**
+ * 設備検索パネル。
+ * 検索結果を一覧表示し、行クリックで対象設備へフォーカスさせる。
+ *
+ * @param {Object} props
+ * @param {(keyword: string) => Array<{key: string, featureId: string, material: string, pipeType: string}>} props.onSearch 検索関数
+ * @param {(key: string) => boolean} props.onFocusResult 結果クリック時のフォーカス関数
+ * @param {boolean} [props.hideInput=false] true の場合はパネル内入力欄を隠す
+ * @param {string} [props.externalKeyword=''] 外部入力欄のキーワード
+ * @param {number} [props.searchRequestId=0] Enter押下などの検索実行トリガーID
+ * @returns {JSX.Element}
+ */
 function EquipmentSearchPanel({
   onSearch,
   onFocusResult,
@@ -13,7 +25,14 @@ function EquipmentSearchPanel({
   const [selectedKey, setSelectedKey] = useState(null);
   const [status, setStatus] = useState('');
 
+  /**
+   * キーワードで設備一覧を検索して表示に反映する。
+   *
+   * @param {string|null} [queryOverride=null] 指定時はこの値を検索語として優先
+   * @returns {void}
+   */
   const handleSearch = (queryOverride = null) => {
+    // 単体入力欄/外部入力欄どちらからでも同じ検索処理を使えるようにする
     const query = String(queryOverride ?? keyword).trim();
     if (!query) {
       setResults([]);
@@ -30,10 +49,12 @@ function EquipmentSearchPanel({
   };
 
   useEffect(() => {
+    // 右上の検索inputと内部stateを同期する
     setKeyword(externalKeyword || '');
   }, [externalKeyword]);
 
   useEffect(() => {
+    // Scene3D側でEnterが押されたら、現在の外部キーワードで検索を実行する
     if (!searchRequestId) return;
     handleSearch(externalKeyword);
   }, [searchRequestId]);
@@ -50,7 +71,6 @@ function EquipmentSearchPanel({
 
   return (
     <div className="equipment-search-panel">
-      <div className="equipment-search-title">◆設備検索</div>
       {!hideInput && (
         <div className="equipment-search-input-row">
           <input
@@ -71,9 +91,9 @@ function EquipmentSearchPanel({
         <table className="equipment-search-table">
           <thead>
             <tr>
-              <th>feature id</th>
-              <th>material</th>
-              <th>pipe_type</th>
+              <th>id</th>
+              <th>管路</th>
+              <th>材質</th>
             </tr>
           </thead>
           <tbody>

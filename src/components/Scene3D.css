@@ -87,6 +87,11 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+.scene-top-right-button.active {
+  background: rgba(99, 179, 237, 0.4);
+  border-color: rgba(99, 179, 237, 0.8);
+}
+
 .scene-top-right-search-input {
   z-index: 16;
   width: 140px;
@@ -102,4 +107,9 @@
 
 .scene-top-right-search-input::placeholder {
   color: rgba(255, 255, 255, 0.8);
+}
+
+.scene-top-right-search-input.active {
+  background: rgba(99, 179, 237, 0.25);
+  border-color: rgba(99, 179, 237, 0.8);
 }
