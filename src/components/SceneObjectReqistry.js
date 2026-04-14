@@ -219,6 +219,13 @@ export default class SceneObjectRegistry {
 
     newData.attributes = newData.attributes || {};
     newData.attributes.crt_user_no = userId;
+    // 新規追加時は土被り深さを初期値(0)で生成する
+    if (newData.attributes.start_point_depth != null) {
+      newData.attributes.start_point_depth = 0;
+    }
+    if (newData.attributes.end_point_depth != null) {
+      newData.attributes.end_point_depth = 0;
+    }
 
     const geometry = newData.geometry[0] || {};
     const isExtrusion =
@@ -1461,7 +1468,7 @@ export default class SceneObjectRegistry {
 
     if (!this.hasChanged()) {
       message.success("登録可能なデータはありません。");
-      return;
+      return false;
     }
 
     try {
@@ -1470,7 +1477,7 @@ export default class SceneObjectRegistry {
       // 追加／複製。
       const addResult = await this.accessor.addCityJsonData(this.addedObjectsData);
 
-      // add API が返す新しい feature_id を、追加オブジェクトに反映してから update を実行する。
+      // add API が返す新しい feature_id を反映してから update を実行する。
       this.applyServerAssignedFeatureIds(addResult, addedKeys);
 
       // 更新／削除。
@@ -1483,6 +1490,7 @@ export default class SceneObjectRegistry {
       this.clearChangedData();
 
       message.success("オブジェクトを登録しました。");
+      return true;
 
     } catch (err) {
       if (err.response) {
@@ -1490,28 +1498,37 @@ export default class SceneObjectRegistry {
       }
       console.error(err.message);
       message.error("オブジェクトの登録に失敗しました。コンソールログを確認してください。");
+      return false;
     }
   }
 
-  // add API のレスポンスから { objectKey -> feature_id } を推定して反映する
+  // add API レスポンス(data配列)を addedKeys の順番で feature_id 反映する
   applyServerAssignedFeatureIds(addResult, addedKeys) {
     if (!addResult || !Array.isArray(addedKeys) || addedKeys.length === 0) {
       return;
     }
 
-    const data = addResult?.data ?? addResult;
-    const featureIdMap = this.extractFeatureIdMapFromAddResponse(data, addedKeys);
-    if (!featureIdMap || Object.keys(featureIdMap).length === 0) {
+    const rows = Array.isArray(addResult?.data) ? addResult.data : [];
+    if (rows.length === 0) {
       return;
     }
 
-    Object.entries(featureIdMap).forEach(([key, featureId]) => {
-      const nextFeatureId = Number(featureId);
+    addedKeys.forEach((key, idx) => {
+      const row = rows[idx];
+      if (!row) return;
+
+      const nextFeatureId = Number(row.feature_id);
       if (!Number.isFinite(nextFeatureId)) return;
 
       const addedObj = this.addedObjectsData?.[key];
       if (addedObj) {
         addedObj.feature_id = nextFeatureId;
+      }
+
+      // 画面表示中のメッシュ側データにも反映し、識別番号表示を即時更新できるようにする
+      const meshObj = this.objectsMeshRef?.[key]?.userData?.objectData;
+      if (meshObj) {
+        meshObj.feature_id = nextFeatureId;
       }
 
       // 追加後に編集されて update 対象へ入っている場合にも同じ feature_id を反映する
@@ -1520,50 +1537,6 @@ export default class SceneObjectRegistry {
         editedObj.feature_id = nextFeatureId;
       }
     });
-  }
-
-  // サーバー返却形式の揺れに耐えるため、複数形式から feature_id マップを抽出する
-  extractFeatureIdMapFromAddResponse(data, addedKeys) {
-    if (!data) return {};
-
-    // 1) { featureIdMap: { "<tempKey>": 123, ... } }
-    if (data.featureIdMap && typeof data.featureIdMap === 'object' && !Array.isArray(data.featureIdMap)) {
-      return data.featureIdMap;
-    }
-
-    // 2) { "<tempKey>": 123, ... } のような直接マップ
-    if (typeof data === 'object' && !Array.isArray(data)) {
-      const values = Object.values(data);
-      const hasNumericLikeValue = values.some((v) => Number.isFinite(Number(v)));
-      if (hasNumericLikeValue) {
-        const filtered = {};
-        addedKeys.forEach((k) => {
-          if (k in data) filtered[k] = data[k];
-        });
-        if (Object.keys(filtered).length > 0) {
-          return filtered;
-        }
-      }
-    }
-
-    // 3) 配列 [{ key|objectKey|clientKey, feature_id|featureId|id }, ...]
-    const list = Array.isArray(data)
-      ? data
-      : (Array.isArray(data.items) ? data.items : null);
-    if (list) {
-      const mapped = {};
-      list.forEach((item, idx) => {
-        if (!item) return;
-        const key = item.key ?? item.objectKey ?? item.clientKey ?? addedKeys[idx];
-        const featureId = item.feature_id ?? item.featureId ?? item.id;
-        if (key != null && featureId != null) {
-          mapped[String(key)] = featureId;
-        }
-      });
-      return mapped;
-    }
-
-    return {};
   }
 
   // 削除のみをコミット(APIサーバーにデータを送信)

@@ -13,6 +13,7 @@ import PotreePointCloudViewer from './PotreePointCloudViewer';
 import GeoTerrainWithJGWTexture from './GeoTerrainWithJGWTexture';
 import './Scene3D.css';
 import CameraBookmarkPanel from './CameraBookmarkPanel';
+import EquipmentSearchPanel from './EquipmentSearchPanel';
 import createCityObjects, { isPipeObject } from './Geometry.js';
 import createQuadTreeNodes from './3D/QuadTree.js';
 import SCENE3D_CONFIG from './Scene3DConfig.js';
@@ -513,6 +514,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showFloor, setShowFloor] = useState(true);
   const [showRoad, setShowRoad] = useState(false);
   const [showBackground, setShowBackground] = useState(!hideBackground);
+  const [showCameraBookmarks, setShowCameraBookmarks] = useState(false);
+  const [showEquipmentSearchPanel, setShowEquipmentSearchPanel] = useState(false);
 
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
@@ -1290,8 +1293,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   }
 
   // 登録ボタンのハンドラー
-  const handleRegister = (objectData, inputValues) => {
-    objectRegistry.commit();
+  const handleRegister = async (objectData, inputValues) => {
+    const committed = await objectRegistry.commit();
+    if (!committed) return;
+
+    // 登録後、サーバー採番された feature_id を表示へ即時反映する
+    if (selectedMeshRef.current?.userData?.objectData) {
+      setSelectedObject(JSON.parse(JSON.stringify(selectedMeshRef.current.userData.objectData)));
+    }
   }
 
   // 複製ボタンのハンドラー
@@ -2786,6 +2795,64 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     updateOrthographicFrustum(activeCamera);
   };
 
+  const searchEquipmentByKeyword = (keyword) => {
+    const query = String(keyword ?? '').trim().toLowerCase();
+    if (!query) return [];
+
+    return Object.entries(objectsRef.current || {})
+      .map(([key, mesh]) => {
+        const objectData = mesh?.userData?.objectData || {};
+        const attrs = objectData.attributes || {};
+        const featureId = objectData.feature_id != null ? String(objectData.feature_id) : '';
+        const material = attrs.material != null ? String(attrs.material) : '';
+        const pipeTypeValue = attrs.pipe_type ?? attrs.pipe_kind ?? '';
+        const pipeType = pipeTypeValue != null ? String(pipeTypeValue) : '';
+        return { key, featureId, material, pipeType };
+      })
+      .filter((row) => (
+        row.featureId.toLowerCase().includes(query) ||
+        row.material.toLowerCase().includes(query) ||
+        row.pipeType.toLowerCase().includes(query)
+      ));
+  };
+
+  const panCameraToEquipment = (objectKey) => {
+    const mesh = objectsRef.current?.[objectKey];
+    const activeCamera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!mesh || !activeCamera || !controls) return false;
+
+    const box = new THREE.Box3();
+    try {
+      mesh.updateWorldMatrix(true, true);
+      box.expandByObject(mesh);
+    } catch (_) {
+      return false;
+    }
+    if (box.isEmpty()) return false;
+
+    const center = box.getCenter(new THREE.Vector3());
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.y) || !Number.isFinite(center.z)) {
+      return false;
+    }
+
+    const delta = center.clone().sub(controls.target);
+    if (!Number.isFinite(delta.length())) return false;
+
+    activeCamera.position.add(delta);
+    controls.target.add(delta);
+    controls.update();
+
+    selectedMeshRef.current = mesh;
+    setSelectedObject(mesh.userData?.objectData || null);
+
+    updateTargetOffsetFromCamera(activeCamera);
+    updateCameraInfoFromCamera(activeCamera);
+    syncCamerasFromActive(activeCamera);
+    updateOrthographicFrustum(activeCamera);
+    return true;
+  };
+
   // オブジェクトの作成（初回のみ）
   useEffect(() => {
     if (!sceneRef.current || !cityJsonData || !layerData) return;
@@ -3335,11 +3402,38 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         </div>
       )}
 
-      <CameraBookmarkPanel
-        onRequestCurrentCamera={getCurrentCameraBookmark}
-        onJumpToBookmark={jumpToCameraBookmark}
-        accessor={accessor}
-      />
+      <div className="scene-top-right-buttons">
+        <button type="button" className="scene-top-right-button">設備</button>
+        <button
+          type="button"
+          className="scene-top-right-button"
+          onClick={() => setShowCameraBookmarks((prev) => !prev)}
+        >
+          {showCameraBookmarks ? 'カメラを閉じる' : 'カメラ'}
+        </button>
+        <button
+          type="button"
+          className="scene-top-right-button"
+          onClick={() => setShowEquipmentSearchPanel((prev) => !prev)}
+        >
+          {showEquipmentSearchPanel ? '検索窓を閉じる' : '検索窓'}
+        </button>
+      </div>
+
+      {showCameraBookmarks && (
+        <CameraBookmarkPanel
+          onRequestCurrentCamera={getCurrentCameraBookmark}
+          onJumpToBookmark={jumpToCameraBookmark}
+          accessor={accessor}
+        />
+      )}
+
+      {showEquipmentSearchPanel && (
+        <EquipmentSearchPanel
+          onSearch={searchEquipmentByKeyword}
+          onFocusResult={panCameraToEquipment}
+        />
+      )}
 
       {/* 画面下部の正射投影モード表示 */}
       {activeCameraTypeRef.current === 'orthographic' && (

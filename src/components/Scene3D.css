@@ -62,3 +62,27 @@
   pointer-events: none;
   z-index: 10;
 }
+
+.scene-top-right-buttons {
+  position: absolute;
+  top: 5px;
+  left: 450px;
+  display: flex;
+  gap: 8px;
+}
+
+.scene-top-right-button {
+  z-index: 16;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+
+.scene-top-right-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
