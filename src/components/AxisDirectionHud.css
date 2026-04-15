@@ -1,0 +1,65 @@
+.axis-hud {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.axis-hud-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.axis-hud-ring {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1;
+}
+
+.axis-line {
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.axis-line-east {
+  stroke: #ff6b6b;
+}
+
+.axis-line-north {
+  stroke: #63b3ed;
+}
+
+.axis-line-up {
+  stroke: #68d391;
+}
+
+.axis-hud-center {
+  fill: rgba(255, 255, 255, 0.9);
+}
+
+.axis-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+}
+
+.axis-label-east {
+  color: #ff9f9f;
+}
+
+.axis-label-north {
+  color: #9ad4ff;
+}
+
+.axis-label-up {
+  color: #9be7b6;
+}

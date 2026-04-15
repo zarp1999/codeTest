@@ -91,8 +91,8 @@ function EquipmentSearchPanel({
         <table className="equipment-search-table">
           <thead>
             <tr>
-              <th>id</th>
-              <th>管路</th>
+              <th>識別番号</th>
+              <th>種別</th>
               <th>材質</th>
             </tr>
           </thead>

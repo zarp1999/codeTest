@@ -14,6 +14,7 @@ import GeoTerrainWithJGWTexture from './GeoTerrainWithJGWTexture';
 import './Scene3D.css';
 import CameraBookmarkPanel from './CameraBookmarkPanel';
 import EquipmentSearchPanel from './EquipmentSearchPanel';
+import AxisDirectionHud from './AxisDirectionHud';
 import createCityObjects, { isPipeObject } from './Geometry.js';
 import createQuadTreeNodes from './3D/QuadTree.js';
 import SCENE3D_CONFIG from './Scene3DConfig.js';
@@ -2823,8 +2824,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     // 右上の検索窓から渡されたキーワードで、シーン上の全設備を部分一致検索する
     const query = String(keyword ?? '').trim().toLowerCase();
     if (!query) return [];
+    // 半角/全角スペース区切りでトークン化し、全トークン一致(AND)で検索する
+    const tokens = query.split(/[\s\u3000]+/).filter(Boolean);
+    if (tokens.length === 0) return [];
 
     return Object.entries(objectsRef.current || {})
+      .filter(([, mesh]) => Boolean(mesh?.visible))
       .map(([key, mesh]) => {
         const objectData = mesh?.userData?.objectData || {};
         const attrs = objectData.attributes || {};
@@ -2832,18 +2837,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         const material = attrs.material != null ? String(attrs.material) : '';
         const pipeTypeValue = attrs.pipe_type ?? attrs.pipe_kind ?? '';
         const pipeType = pipeTypeValue != null ? String(pipeTypeValue) : '';
-        return { key, featureId, material, pipeType };
+        return {
+          key,
+          featureId,
+          material,
+          pipeType,
+          searchableText: `${featureId} ${material} ${pipeType}`.toLowerCase()
+        };
       })
-      .filter((row) => (
-        row.featureId.toLowerCase().includes(query) ||
-        row.material.toLowerCase().includes(query) ||
-        row.pipeType.toLowerCase().includes(query)
-      ));
+      .filter((row) => tokens.every((token) => row.searchableText.includes(token)))
+      .map(({ searchableText, ...row }) => row);
   };
 
   /**
-   * 対象設備へカメラを平行移動して画面中央へ寄せる。
-   * カメラ姿勢は維持し、camera位置とcontrols.targetを同量移動する。
+   * 対象設備を画面中央に据え、固定距離でカメラを再配置する。
+   * カメラ姿勢は維持し、現在の前方ベクトル方向で center から一定距離だけ離す。
    *
    * @param {string} objectKey objectsRef に登録された設備キー
    * @returns {boolean} 移動できた場合 true
@@ -2868,16 +2876,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return false;
     }
 
-    const delta = center.clone().sub(controls.target);
-    if (!Number.isFinite(delta.length())) return false;
+    const fixedDistance = 10;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(activeCamera.quaternion).normalize();
+    if (!Number.isFinite(forward.x) || !Number.isFinite(forward.y) || !Number.isFinite(forward.z)) {
+      return false;
+    }
 
-    // カメラとtargetを同じ差分だけ平行移動し、向きは保ったまま対象を画面中央へ寄せる
-    activeCamera.position.add(delta);
-    controls.target.add(delta);
+    // 対象中心から固定距離(10m)を保つように、現在姿勢のままカメラ位置のみ再配置する
+    activeCamera.position.copy(center.clone().sub(forward.multiplyScalar(fixedDistance)));
+    controls.target.copy(center);
     controls.update();
 
     selectedMeshRef.current = mesh;
     setSelectedObject(mesh.userData?.objectData || null);
+    // 検索結果選択でも通常クリックと同様にアウトラインを再生成する
+    showOutline(mesh);
 
     updateTargetOffsetFromCamera(activeCamera);
     updateCameraInfoFromCamera(activeCamera);
@@ -3459,6 +3472,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               setEquipmentSearchRequestId((prev) => prev + 1);
             }
           }}
+        />
+        <AxisDirectionHud
+          cameraRef={cameraRef}
+          activeCameraTypeRef={activeCameraTypeRef}
         />
       </div>
 
