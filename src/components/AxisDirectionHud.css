@@ -1,7 +1,11 @@
 .axis-hud {
-  position: relative;
-  width: 88px;
-  height: 88px;
+  position: absolute;
+  top: 5px;
+  right: 500px;
+  left: auto;
+  z-index: 16;
+  width: var(--axis-hud-size, 104px);
+  height: var(--axis-hud-size, 104px);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.45);

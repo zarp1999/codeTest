@@ -66,9 +66,14 @@
 .scene-top-right-buttons {
   position: absolute;
   top: 5px;
-  left: 450px;
+  right: 810px;
   display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
+  max-width: calc(100% - 24px);
+  z-index: 16;
 }
 
 .scene-top-right-button {
@@ -112,4 +117,14 @@
 .scene-top-right-search-input.active {
   background: rgba(99, 179, 237, 0.25);
   border-color: rgba(99, 179, 237, 0.8);
+}
+
+@media (max-width: 900px) {
+  .scene-top-right-buttons {
+    top: 8px;
+  }
+
+  .scene-top-right-search-input {
+    width: 120px;
+  }
 }

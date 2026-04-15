@@ -1,10 +1,10 @@
 .camera-bookmark-panel {
   position: absolute;
   top: 40px;
-  left: 450px;
-  /* transform: translateX(-50%); */
+  right: 730px;
+  left: auto;
   z-index: 15;
-  width: 340px;
+  width: min(340px, calc(100vw - 24px));
   max-height: 300px;
   padding: 10px;
   color: #fff;
