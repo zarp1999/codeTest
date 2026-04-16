@@ -15,6 +15,7 @@ import './Scene3D.css';
 import CameraBookmarkPanel from './CameraBookmarkPanel';
 import EquipmentSearchPanel from './EquipmentSearchPanel';
 import AxisDirectionHud from './AxisDirectionHud';
+import SubViewPanel from './SubViewPanel';
 import createCityObjects, { isPipeObject } from './Geometry.js';
 import createQuadTreeNodes from './3D/QuadTree.js';
 import SCENE3D_CONFIG from './Scene3DConfig.js';
@@ -517,8 +518,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showBackground, setShowBackground] = useState(!hideBackground);
   const [showCameraBookmarks, setShowCameraBookmarks] = useState(false);
   const [showEquipmentSearchPanel, setShowEquipmentSearchPanel] = useState(false);
+  const [showSubViews, setShowSubViews] = useState(false);
+  // animateループ内の古いクロージャを避けるため、表示状態はrefにも同期して参照する
+  const showSubViewsRef = useRef(false);
   const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
   const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
+  // サブビュー描画はSubViewPanelのimperative APIへ委譲
+  const subViewPanelRef = useRef(null);
 
   const handleToggleCameraPanel = () => {
     setShowCameraBookmarks((prev) => {
@@ -534,6 +540,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     setShowEquipmentSearchPanel(true);
     setShowCameraBookmarks(false);
   };
+
+  const handleToggleSubViews = () => {
+    setShowSubViews((prev) => !prev);
+  };
+
+  useEffect(() => {
+    showSubViewsRef.current = showSubViews;
+  }, [showSubViews]);
 
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
@@ -2541,7 +2555,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       // レンダリング（エラーハンドリング付き）
       try {
         syncCamerasFromActive(camera);
+        renderer.autoClear = true;
         renderer.render(scene, camera);
+        // メイン描画後に同一rendererでサブビュー（3面）を重ね描きする
+        if (showSubViewsRef.current && subViewPanelRef.current) {
+          const width = mountRef.current?.clientWidth || 0;
+          const height = mountRef.current?.clientHeight || 0;
+          subViewPanelRef.current.renderSubViews({
+            renderer,
+            scene,
+            mainCamera: camera,
+            target: controlsRef.current?.target,
+            canvasWidth: width,
+            canvasHeight: height
+          });
+        }
       } catch (error) {
         console.error('Rendering error:', error);
         // エラー発生時はアニメーションを停止
@@ -3457,6 +3485,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         >
           {showCameraBookmarks ? 'カメラを閉じる' : 'カメラ'}
         </button>
+        <button
+          type="button"
+          className={`scene-top-right-button ${showSubViews ? 'active' : ''}`}
+          onClick={handleToggleSubViews}
+        >
+          {showSubViews ? 'サブビューを閉じる' : 'サブビュー'}
+        </button>
         <input
           type="text"
           className={`scene-top-right-search-input ${showEquipmentSearchPanel ? 'active' : ''}`}
@@ -3497,6 +3532,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           searchRequestId={equipmentSearchRequestId}
         />
       )}
+
+      <SubViewPanel ref={subViewPanelRef} visible={showSubViews} />
 
       {/* 画面下部の正射投影モード表示 */}
       {activeCameraTypeRef.current === 'orthographic' && (

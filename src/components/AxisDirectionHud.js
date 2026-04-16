@@ -115,6 +115,26 @@ function AxisDirectionHud({ cameraRef, activeCameraTypeRef, cameraInfo }) {
     };
   }, [cameraRef, activeCameraTypeRef]);
 
+  const headingToText = (deg) => {
+    const dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+    const normalizedDeg = (deg + 360) % 360;
+    const index = Math.round(normalizedDeg / 22.5) % 16;
+    return dirs[index];
+  };
+
+  const eastWest = Number(cameraInfo?.x ?? 0);
+  const northSouth = Number(cameraInfo?.z ?? 0);
+  const altitudeRaw = Number(cameraInfo?.y ?? 0);
+  const yawDeg = Number(cameraInfo?.yaw ?? 0);
+  // Scene3D側のpitchは0..360表記のため、符号付き角度へ戻して見上げ/見下ろしを判定する
+  const pitch360 = Number(cameraInfo?.pitch ?? 0);
+  const signedPitch = ((pitch360 + 180) % 360) - 180;
+
+  const altitudeLabel = altitudeRaw >= 0 ? '高さ' : '深さ';
+  const altitudeValue = Math.abs(altitudeRaw);
+  const pitchLabel = Math.abs(signedPitch) < 0.05 ? '水平' : signedPitch > 0 ? '見下ろし' : '見上げ';
+  const pitchValue = Math.abs(signedPitch);
+
   return (
     <div
       className="axis-hud"
@@ -127,11 +147,28 @@ function AxisDirectionHud({ cameraRef, activeCameraTypeRef, cameraInfo }) {
       <span className="axis-label axis-label-north" ref={(el) => { labelRefs.current.north = el; }}>北</span>
       <span className="axis-label axis-label-up" ref={(el) => { labelRefs.current.up = el; }}>上</span>
       <div className="axis-hud-info">
-        <div>
-          カメラ位置: 東西 {Number(cameraInfo?.x ?? 0).toFixed(3)}m, 南北 {Number(cameraInfo?.z ?? 0).toFixed(3)}m, 高さ {Number(cameraInfo?.y ?? 0).toFixed(3)}m
+        <div className='axis-hud-block'>
+          <div className='axis-hud-title'>カメラ位置:</div>
+          <div className='axis-hud-item'>
+          東西: {eastWest.toFixed(3)} m
+          </div>
+          <div className='axis-hud-item'>
+          南北: {northSouth.toFixed(3)} m
+          </div>
+          <div className='axis-hud-item'>
+          {altitudeLabel}: {altitudeValue.toFixed(3)} m
+          </div>
         </div>
-        <div>
-          カメラ向き: 方位 {Number(cameraInfo?.yaw ?? 0).toFixed(1)}度, 見下ろし {Number(cameraInfo?.pitch ?? 0).toFixed(1)}度
+
+        <div className='axis-hud-block'>
+          <div className='axis-hud-title'>カメラ向き:</div>
+          <div className='axis-hud-item'>
+            方位: {yawDeg.toFixed(1)} 度
+             ({headingToText(yawDeg)})
+          </div>
+          <div className='axis-hud-item'>
+            {pitchLabel}: {pitchValue.toFixed(1)} 度
+          </div>
         </div>
       </div>
     </div>

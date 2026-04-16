@@ -47,13 +47,26 @@
   position: absolute;
   top: calc(var(--axis-hud-size, 104px) + 6px);
   left: 0;
-  min-width: 260px;
+  min-width: 160px;
   padding: 6px 8px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
   font-size: 11px;
-  line-height: 1.35;
-  white-space: nowrap;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.axis-hud-block {
+  margin-bottom: 6px;
+}
+
+.axis-hud-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.axis-hud-item {
+  margin-bottom: 2px;
 }

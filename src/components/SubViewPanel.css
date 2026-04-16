@@ -1,0 +1,56 @@
+.subview-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 35%;
+  pointer-events: none;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+}
+
+.subview-root-title {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.subview-panels {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.subview-panel {
+  position: relative;
+  flex: 1 1 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  border-right: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.subview-panel:first-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.subview-panel-title {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
