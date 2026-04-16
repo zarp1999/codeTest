@@ -3476,6 +3476,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         <AxisDirectionHud
           cameraRef={cameraRef}
           activeCameraTypeRef={activeCameraTypeRef}
+          cameraInfo={cameraInfo}
         />
       </div>
 
