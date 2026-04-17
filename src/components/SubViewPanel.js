@@ -35,6 +35,9 @@ const VIEW_DEFS = [
   }
 ];
 
+const MIN_HALF_SIZE = 2;
+const MAX_HALF_SIZE = 200000;
+
 /**
  * メインカメラの見え方に合わせて、サブビュー正射カメラの半サイズを決める。
  * @param {THREE.Camera | null | undefined} mainCamera 現在のメインカメラ
@@ -55,6 +58,32 @@ const getHalfViewSize = (mainCamera, distance) => {
   return 20;
 };
 
+const createDefaultViewState = () => ({
+  center: new THREE.Vector3(0, 0, 0),
+  distance: 60,
+  halfSize: 24
+});
+
+const getMeshWorldCenter = (mesh, fallback) => {
+  if (!mesh || !mesh.isObject3D) return fallback.clone();
+  mesh.updateWorldMatrix(true, true);
+
+  if (mesh.geometry) {
+    if (!mesh.geometry.boundingBox) {
+      mesh.geometry.computeBoundingBox();
+    }
+    if (mesh.geometry.boundingBox) {
+      const center = new THREE.Vector3();
+      mesh.geometry.boundingBox.getCenter(center);
+      return center.applyMatrix4(mesh.matrixWorld);
+    }
+  }
+
+  const worldPos = new THREE.Vector3();
+  mesh.getWorldPosition(worldPos);
+  return worldPos;
+};
+
 /**
  * メイン3Dキャンバスの下部に3面サブビューを重ねるオーバーレイ。
  *
@@ -68,7 +97,6 @@ const getHalfViewSize = (mainCamera, distance) => {
  *     renderer: THREE.WebGLRenderer,
  *     scene: THREE.Scene,
  *     mainCamera: THREE.Camera,
- *     target?: THREE.Vector3 | null,
  *     canvasWidth: number,
  *     canvasHeight: number
  *   }) => void
@@ -81,8 +109,144 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     side: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000),
     top: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000)
   });
+  const viewStatesRef = useRef({
+    front: createDefaultViewState(),
+    side: createDefaultViewState(),
+    top: createDefaultViewState()
+  });
+  const lastFrameRef = useRef({
+    canvasWidth: 0,
+    canvasHeight: 0,
+    subHeight: 0,
+    panelWidth: 0,
+    subTop: 0
+  });
+  const dragStateRef = useRef({
+    active: false,
+    viewKey: null,
+    startX: 0,
+    startY: 0,
+    startCenter: new THREE.Vector3()
+  });
+
+  const getHit = ({ clientX, clientY, rect }) => {
+    if (!visible || !rect) return null;
+    const frame = lastFrameRef.current;
+    if (frame.canvasWidth <= 0 || frame.canvasHeight <= 0 || frame.subHeight <= 0) return null;
+
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    if (localX < 0 || localX > frame.canvasWidth || localY < frame.subTop || localY > frame.canvasHeight) {
+      return null;
+    }
+
+    const panelWidth = frame.panelWidth > 0 ? frame.panelWidth : Math.floor(frame.canvasWidth / VIEW_DEFS.length);
+    const rawIndex = Math.floor(localX / Math.max(1, panelWidth));
+    const index = Math.min(VIEW_DEFS.length - 1, Math.max(0, rawIndex));
+    const x = index * panelWidth;
+    const width = index === VIEW_DEFS.length - 1 ? frame.canvasWidth - x : panelWidth;
+
+    return {
+      index,
+      viewDef: VIEW_DEFS[index],
+      localX,
+      localY,
+      width,
+      height: frame.subHeight
+    };
+  };
 
   useImperativeHandle(ref, () => ({
+    isPointInSubView({ clientX, clientY, rect }) {
+      return !!getHit({ clientX, clientY, rect });
+    },
+
+    handlePointerDown({ clientX, clientY, rect, followEnabled }) {
+      const hit = getHit({ clientX, clientY, rect });
+      if (!hit) return false;
+      if (followEnabled) return true;
+
+      const state = viewStatesRef.current[hit.viewDef.key];
+      dragStateRef.current.active = true;
+      dragStateRef.current.viewKey = hit.viewDef.key;
+      dragStateRef.current.startX = clientX;
+      dragStateRef.current.startY = clientY;
+      dragStateRef.current.startCenter.copy(state.center);
+      return true;
+    },
+
+    handlePointerMove({ clientX, clientY, rect, followEnabled }) {
+      if (!dragStateRef.current.active) {
+        return !!getHit({ clientX, clientY, rect });
+      }
+      if (followEnabled) {
+        dragStateRef.current.active = false;
+        dragStateRef.current.viewKey = null;
+        return true;
+      }
+
+      const viewKey = dragStateRef.current.viewKey;
+      const viewDef = VIEW_DEFS.find((v) => v.key === viewKey);
+      const state = viewStatesRef.current[viewKey];
+      if (!viewDef || !state) return true;
+
+      const frame = lastFrameRef.current;
+      const panelWidth = Math.max(1, frame.panelWidth || Math.floor(frame.canvasWidth / VIEW_DEFS.length));
+      const width = viewDef.key === VIEW_DEFS[VIEW_DEFS.length - 1].key
+        ? Math.max(1, frame.canvasWidth - panelWidth * (VIEW_DEFS.length - 1))
+        : panelWidth;
+      const height = Math.max(1, frame.subHeight);
+
+      const dx = clientX - dragStateRef.current.startX;
+      const dy = clientY - dragStateRef.current.startY;
+      const aspect = Math.max(width / height, 0.1);
+      const worldPerPixelX = (state.halfSize * 2 * aspect) / width;
+      const worldPerPixelY = (state.halfSize * 2) / height;
+
+      const forward = viewDef.direction.clone().normalize();
+      const up = viewDef.up.clone().normalize();
+      const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+      const panX = -dx * worldPerPixelX;
+      const panY = dy * worldPerPixelY;
+
+      state.center.copy(dragStateRef.current.startCenter)
+        .addScaledVector(right, panX)
+        .addScaledVector(up, panY);
+      return true;
+    },
+
+    handlePointerUp({ clientX, clientY, rect }) {
+      const wasDragging = dragStateRef.current.active;
+      dragStateRef.current.active = false;
+      dragStateRef.current.viewKey = null;
+      if (wasDragging) return true;
+      return !!getHit({ clientX, clientY, rect });
+    },
+
+    handleWheel({ clientX, clientY, rect, deltaY }) {
+      const hit = getHit({ clientX, clientY, rect });
+      if (!hit) return false;
+
+      const state = viewStatesRef.current[hit.viewDef.key];
+      if (!state) return true;
+      const zoomFactor = deltaY > 0 ? 1.1 : 0.9;
+      state.halfSize = THREE.MathUtils.clamp(state.halfSize * zoomFactor, MIN_HALF_SIZE, MAX_HALF_SIZE);
+      return true;
+    },
+
+    handleDoubleClick({ clientX, clientY, rect, followEnabled, selectedMesh }) {
+      const hit = getHit({ clientX, clientY, rect });
+      if (!hit) return false;
+      if (followEnabled) return true;
+
+      const fallback = viewStatesRef.current.front.center;
+      const nextCenter = getMeshWorldCenter(selectedMesh, fallback);
+      Object.values(viewStatesRef.current).forEach((state) => {
+        state.center.copy(nextCenter);
+      });
+      return true;
+    },
+
     /**
      * メイン描画の直後に呼び出されるサブビュー描画処理。
      * 同じWebGLRendererに対して scissor/viewport を切り替えながら3回描画する。
@@ -91,12 +255,13 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
      *   renderer: THREE.WebGLRenderer,
      *   scene: THREE.Scene,
      *   mainCamera: THREE.Camera,
-     *   target?: THREE.Vector3 | null,
+     *   selectedMesh?: THREE.Object3D | null,
+     *   followEnabled?: boolean,
      *   canvasWidth: number,
      *   canvasHeight: number
      * }} args
      */
-    renderSubViews({ renderer, scene, mainCamera, target, canvasWidth, canvasHeight }) {
+    renderSubViews({ renderer, scene, mainCamera, selectedMesh, followEnabled, canvasWidth, canvasHeight }) {
       if (!visible || !renderer || !scene || !mainCamera) return;
       if (!Number.isFinite(canvasWidth) || !Number.isFinite(canvasHeight)) return;
       if (canvasWidth <= 0 || canvasHeight <= 0) return;
@@ -104,21 +269,40 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       // 下部35%を3分割して使用
       const subHeight = Math.max(1, Math.floor(canvasHeight * SUB_VIEW_HEIGHT_RATIO));
       const panelWidth = Math.floor(canvasWidth / VIEW_DEFS.length);
-      // OrbitControls.target を注視点として使い、無い場合は原点を採用
-      const center = (target && target.isVector3) ? target : new THREE.Vector3(0, 0, 0);
-      // メインカメラとの距離を基準に、サブビューの引き具合を決定
-      const distance = Math.max(20, mainCamera.position.distanceTo(center) * 0.65);
-      const near = Math.max(0.1, distance * 0.01);
-      const far = Math.max(2000, distance * 40);
+      const followCenter = selectedMesh
+        ? getMeshWorldCenter(selectedMesh, new THREE.Vector3(0, 0, 0))
+        : null;
+
+      lastFrameRef.current.canvasWidth = canvasWidth;
+      lastFrameRef.current.canvasHeight = canvasHeight;
+      lastFrameRef.current.subHeight = subHeight;
+      lastFrameRef.current.panelWidth = panelWidth;
+      lastFrameRef.current.subTop = canvasHeight - subHeight;
 
       VIEW_DEFS.forEach((viewDef, index) => {
         const camera = subCamerasRef.current[viewDef.key];
+        const state = viewStatesRef.current[viewDef.key];
         if (!camera) return;
+        if (!state) return;
+
+        if (followEnabled && followCenter) {
+          state.center.copy(followCenter);
+        }
+
+        if (!Number.isFinite(state.distance) || state.distance <= 0) {
+          state.distance = Math.max(20, mainCamera.position.distanceTo(state.center) * 0.65);
+        }
+        if (!Number.isFinite(state.halfSize) || state.halfSize <= 0) {
+          state.halfSize = getHalfViewSize(mainCamera, state.distance);
+        }
 
         const x = index * panelWidth;
         const width = index === VIEW_DEFS.length - 1 ? canvasWidth - x : panelWidth;
         const aspect = Math.max(width / subHeight, 0.1);
-        const halfSize = getHalfViewSize(mainCamera, distance);
+        const distance = state.distance;
+        const halfSize = state.halfSize;
+        const near = Math.max(0.1, distance * 0.01);
+        const far = Math.max(2000, distance * 40);
 
         // 各サブビュー用の正射投影範囲を更新
         camera.left = -halfSize * aspect;
@@ -128,9 +312,9 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         camera.near = near;
         camera.far = far;
 
-        camera.position.copy(center).addScaledVector(viewDef.direction, -distance);
+        camera.position.copy(state.center).addScaledVector(viewDef.direction, -distance);
         camera.up.copy(viewDef.up);
-        camera.lookAt(center);
+        camera.lookAt(state.center);
         camera.updateProjectionMatrix();
         camera.updateMatrixWorld(true);
 

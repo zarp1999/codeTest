@@ -519,8 +519,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showCameraBookmarks, setShowCameraBookmarks] = useState(false);
   const [showEquipmentSearchPanel, setShowEquipmentSearchPanel] = useState(false);
   const [showSubViews, setShowSubViews] = useState(false);
+  const [subViewFollowEnabled, setSubViewFollowEnabled] = useState(true);
   // animateループ内の古いクロージャを避けるため、表示状態はrefにも同期して参照する
   const showSubViewsRef = useRef(false);
+  const subViewFollowEnabledRef = useRef(true);
   const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
   const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
   // サブビュー描画はSubViewPanelのimperative APIへ委譲
@@ -545,9 +547,27 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     setShowSubViews((prev) => !prev);
   };
 
+  const handleToggleSubViewFollow = (event) => {
+    setSubViewFollowEnabled(event.target.checked);
+  };
+
+  const isSubViewInteraction = (event) => {
+    if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return false;
+    const rect = mountRef.current.getBoundingClientRect();
+    return subViewPanelRef.current.isPointInSubView({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect
+    });
+  };
+
   useEffect(() => {
     showSubViewsRef.current = showSubViews;
   }, [showSubViews]);
+
+  useEffect(() => {
+    subViewFollowEnabledRef.current = subViewFollowEnabled;
+  }, [subViewFollowEnabled]);
 
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
@@ -652,6 +672,18 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // マウス移動ハンドラー
   const handleMouseMove = (event) => {
     const rect = mountRef.current.getBoundingClientRect();
+    if (showSubViewsRef.current && subViewPanelRef.current) {
+      const handled = subViewPanelRef.current.handlePointerMove({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect,
+        followEnabled: subViewFollowEnabledRef.current
+      });
+      if (handled) {
+        mouseMovedRef.current = false;
+        return;
+      }
+    }
     mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     mouseMovedRef.current = true;
@@ -742,6 +774,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return;
     }
 
+    if (showSubViewsRef.current && subViewPanelRef.current) {
+      const rect = mountRef.current.getBoundingClientRect();
+      const handled = subViewPanelRef.current.handlePointerDown({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect,
+        followEnabled: subViewFollowEnabledRef.current
+      });
+      if (handled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+
     // 管路情報表示エリア内のクリックは無視
     if (event.target.closest('.pipeline-info-display') ||
       event.target.closest('.pipeline-info-text') ||
@@ -823,6 +870,17 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // マウスアップハンドラー
   const handleMouseUp = (event) => {
     if (event.button === 0) { // 左クリックのみ
+      if (showSubViewsRef.current && subViewPanelRef.current) {
+        const rect = mountRef.current.getBoundingClientRect();
+        const handled = subViewPanelRef.current.handlePointerUp({
+          clientX: event.clientX,
+          clientY: event.clientY,
+          rect
+        });
+        if (handled) {
+          return;
+        }
+      }
       // 左shiftキーが押されている場合は距離計測を優先
       if (event.shiftKey) {
         return;
@@ -1063,6 +1121,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   // クリックハンドラー
   const handleClick = (event) => {
+    if (isSubViewInteraction(event)) {
+      return;
+    }
+
 
     // 左shiftキーが押されている場合は距離計測を優先
     if (event.shiftKey) {
@@ -1165,6 +1227,37 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         selectedMeshRef.current = null;
         clearOutline();
       }
+    }
+  };
+
+  const handleDoubleClick = (event) => {
+    if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return;
+    const rect = mountRef.current.getBoundingClientRect();
+    const handled = subViewPanelRef.current.handleDoubleClick({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect,
+      followEnabled: subViewFollowEnabledRef.current,
+      selectedMesh: selectedMeshRef.current
+    });
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handleMouseWheel = (event) => {
+    if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return;
+    const rect = mountRef.current.getBoundingClientRect();
+    const handled = subViewPanelRef.current.handleWheel({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect,
+      deltaY: event.deltaY
+    });
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   };
 
@@ -1988,6 +2081,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     mountRef.current.addEventListener('mousedown', handleMouseDown);
     mountRef.current.addEventListener('mouseup', handleMouseUp);
     mountRef.current.addEventListener('click', handleClick);
+    mountRef.current.addEventListener('dblclick', handleDoubleClick);
+    renderer.domElement.addEventListener('wheel', handleMouseWheel, { passive: false, capture: true });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
@@ -2565,7 +2660,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             renderer,
             scene,
             mainCamera: camera,
-            target: controlsRef.current?.target,
+            selectedMesh: selectedMeshRef.current,
+            followEnabled: subViewFollowEnabledRef.current,
             canvasWidth: width,
             canvasHeight: height
           });
@@ -2622,9 +2718,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           currentMount.removeEventListener('mousedown', handleMouseDown);
           currentMount.removeEventListener('mouseup', handleMouseUp);
           currentMount.removeEventListener('click', handleClick);
+          currentMount.removeEventListener('dblclick', handleDoubleClick);
         }
       } catch (error) {
         console.error('DOMイベントリスナーの削除でエラー:', error);
+      }
+      try {
+        renderer.domElement.removeEventListener('wheel', handleMouseWheel, true);
+      } catch (error) {
+        console.error('wheelイベントリスナーの削除でエラー:', error);
       }
 
       // 右ドラッグ回転用イベントの削除
@@ -3492,6 +3594,16 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         >
           {showSubViews ? 'サブビューを閉じる' : 'サブビュー'}
         </button>
+        {showSubViews && (
+          <label className="scene-top-right-checkbox">
+            <input
+              type="checkbox"
+              checked={subViewFollowEnabled}
+              onChange={handleToggleSubViewFollow}
+            />
+            サブビュー追従
+          </label>
+        )}
         <input
           type="text"
           className={`scene-top-right-search-input ${showEquipmentSearchPanel ? 'active' : ''}`}
@@ -3533,7 +3645,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         />
       )}
 
-      <SubViewPanel ref={subViewPanelRef} visible={showSubViews} />
+      <SubViewPanel
+        ref={subViewPanelRef}
+        visible={showSubViews}
+      />
 
       {/* 画面下部の正射投影モード表示 */}
       {activeCameraTypeRef.current === 'orthographic' && (

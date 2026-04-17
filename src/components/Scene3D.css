@@ -119,6 +119,25 @@
   border-color: rgba(99, 179, 237, 0.8);
 }
 
+.scene-top-right-checkbox {
+  z-index: 16;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 12px;
+  backdrop-filter: blur(2px);
+  user-select: none;
+}
+
+.scene-top-right-checkbox input {
+  margin: 0;
+}
+
 @media (max-width: 900px) {
   .scene-top-right-buttons {
     top: 8px;
