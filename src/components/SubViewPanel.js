@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
 import './SubViewPanel.css';
 
@@ -16,19 +16,22 @@ const SUB_VIEW_HEIGHT_RATIO = 0.35;
 const VIEW_DEFS = [
   {
     key: 'front',
-    title: '正面（北向き）',
+    titleNormal: '正面（北向き）',
+    titleReverse: '正面（南向き）',
     direction: new THREE.Vector3(0, 0, -1),
     up: new THREE.Vector3(0, 1, 0)
   },
   {
     key: 'side',
-    title: '側面（西向き）',
+    titleNormal: '側面（西向き）',
+    titleReverse: '側面（東向き）',
     direction: new THREE.Vector3(-1, 0, 0),
     up: new THREE.Vector3(0, 1, 0)
   },
   {
     key: 'top',
-    title: '平面（下向き）',
+    titleNormal: '平面（下向き）',
+    titleReverse: '平面（上向き）',
     direction: new THREE.Vector3(0, -1, 0),
     // 北方向(-Z)が画面上になるように上方向を固定
     up: new THREE.Vector3(0, 0, -1)
@@ -37,6 +40,10 @@ const VIEW_DEFS = [
 
 const MIN_HALF_SIZE = 2;
 const MAX_HALF_SIZE = 200000;
+const DIRECTION_MODE = {
+  NORMAL: 'normal',
+  REVERSE: 'reverse'
+};
 
 /**
  * メインカメラの見え方に合わせて、サブビュー正射カメラの半サイズを決める。
@@ -103,6 +110,11 @@ const getMeshWorldCenter = (mesh, fallback) => {
  * }>} ref
  */
 const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
+  const [directionModeMap, setDirectionModeMap] = useState({
+    front: DIRECTION_MODE.NORMAL,
+    side: DIRECTION_MODE.NORMAL,
+    top: DIRECTION_MODE.NORMAL
+  });
   // 3面それぞれのサブビュー専用カメラ（毎フレーム使い回す）
   const subCamerasRef = useRef({
     front: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000),
@@ -284,6 +296,9 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         const state = viewStatesRef.current[viewDef.key];
         if (!camera) return;
         if (!state) return;
+        const mode = directionModeMap[viewDef.key] || DIRECTION_MODE.NORMAL;
+        const directionSign = mode === DIRECTION_MODE.REVERSE ? -1 : 1;
+        const effectiveDirection = viewDef.direction.clone().multiplyScalar(directionSign);
 
         if (followEnabled && followCenter) {
           state.center.copy(followCenter);
@@ -312,7 +327,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         camera.near = near;
         camera.far = far;
 
-        camera.position.copy(state.center).addScaledVector(viewDef.direction, -distance);
+        camera.position.copy(state.center).addScaledVector(effectiveDirection, -distance);
         camera.up.copy(viewDef.up);
         camera.lookAt(state.center);
         camera.updateProjectionMatrix();
@@ -330,7 +345,20 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       // 以降の描画処理に影響しないよう、viewportを全体へ戻す
       renderer.setViewport(0, 0, canvasWidth, canvasHeight);
     }
-  }), [visible]);
+  }), [directionModeMap, visible]);
+
+  const handleDirectionModeChange = (viewKey, mode) => {
+    setDirectionModeMap((prev) => {
+      if (prev[viewKey] === mode) return prev;
+      return { ...prev, [viewKey]: mode };
+    });
+  };
+
+  const toggleDirectionMode = (viewKey) => {
+    const current = directionModeMap[viewKey] || DIRECTION_MODE.NORMAL;
+    const next = current === DIRECTION_MODE.NORMAL ? DIRECTION_MODE.REVERSE : DIRECTION_MODE.NORMAL;
+    handleDirectionModeChange(viewKey, next);
+  };
 
   if (!visible) return null;
 
@@ -340,7 +368,22 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       <div className="subview-panels">
         {VIEW_DEFS.map((view) => (
           <div className="subview-panel" key={view.key}>
-            <div className="subview-panel-title">{view.title}</div>
+            <div className="subview-panel-title">
+              <label className="subview-direction-toggle">
+                <input
+                  type="radio"
+                  name={`subview-direction-${view.key}`}
+                  checked={directionModeMap[view.key] === DIRECTION_MODE.REVERSE}
+                  onClick={() => toggleDirectionMode(view.key)}
+                  readOnly
+                />
+                <span>
+                  {directionModeMap[view.key] === DIRECTION_MODE.REVERSE
+                    ? view.titleReverse
+                    : view.titleNormal}
+                </span>
+              </label>
+            </div>
           </div>
         ))}
       </div>
