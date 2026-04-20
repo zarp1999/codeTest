@@ -140,6 +140,22 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     startY: 0,
     startCenter: new THREE.Vector3()
   });
+  const subViewOverlaySceneRef = useRef(null);
+  const subViewAxesRef = useRef(null);
+
+  if (!subViewOverlaySceneRef.current) {
+    const overlayScene = new THREE.Scene();
+    const axes = new THREE.AxesHelper(1);
+    if (axes.material) {
+      axes.material.depthTest = false;
+      axes.material.depthWrite = false;
+      axes.material.transparent = true;
+      axes.material.opacity = 0.95;
+    }
+    overlayScene.add(axes);
+    subViewOverlaySceneRef.current = overlayScene;
+    subViewAxesRef.current = axes;
+  }
 
   const getHit = ({ clientX, clientY, rect }) => {
     if (!visible || !rect) return null;
@@ -339,6 +355,15 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         renderer.setScissorTest(true);
         renderer.clearDepth();
         renderer.render(scene, camera);
+
+        // サブビュー専用の軸線を重ねて描画（メインビューには表示しない）
+        if (subViewAxesRef.current && subViewOverlaySceneRef.current) {
+          const axisSize = Math.max(2, halfSize * 0.45);
+          subViewAxesRef.current.position.copy(state.center);
+          subViewAxesRef.current.scale.setScalar(axisSize);
+          renderer.clearDepth();
+          renderer.render(subViewOverlaySceneRef.current, camera);
+        }
       });
 
       renderer.setScissorTest(false);
