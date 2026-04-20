@@ -569,6 +569,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     subViewFollowEnabledRef.current = subViewFollowEnabled;
   }, [subViewFollowEnabled]);
 
+  useEffect(() => {
+    if (enableCrossSectionMode) {
+      setShowSubViews(false);
+    }
+  }, [enableCrossSectionMode]);
+
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
 
@@ -3587,14 +3593,16 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         >
           {showCameraBookmarks ? 'カメラを閉じる' : 'カメラ'}
         </button>
-        <button
-          type="button"
-          className={`scene-top-right-button ${showSubViews ? 'active' : ''}`}
-          onClick={handleToggleSubViews}
-        >
-          {showSubViews ? 'サブビューを閉じる' : 'サブビュー'}
-        </button>
-        {showSubViews && (
+        {!enableCrossSectionMode && (
+          <button
+            type="button"
+            className={`scene-top-right-button ${showSubViews ? 'active' : ''}`}
+            onClick={handleToggleSubViews}
+          >
+            {showSubViews ? 'サブビューを閉じる' : 'サブビュー'}
+          </button>
+        )}
+        {!enableCrossSectionMode && showSubViews && (
           <label className="scene-top-right-checkbox">
             <input
               type="checkbox"
@@ -3647,7 +3655,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
       <SubViewPanel
         ref={subViewPanelRef}
-        visible={showSubViews}
+        visible={!enableCrossSectionMode && showSubViews}
       />
 
       {/* 画面下部の正射投影モード表示 */}

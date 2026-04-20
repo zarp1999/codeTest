@@ -293,6 +293,8 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       if (!visible || !renderer || !scene || !mainCamera) return;
       if (!Number.isFinite(canvasWidth) || !Number.isFinite(canvasHeight)) return;
       if (canvasWidth <= 0 || canvasHeight <= 0) return;
+      const prevAutoClear = renderer.autoClear;
+      renderer.autoClear = false;
 
       // 下部35%を3分割して使用
       const subHeight = Math.max(1, Math.floor(canvasHeight * SUB_VIEW_HEIGHT_RATIO));
@@ -369,6 +371,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       renderer.setScissorTest(false);
       // 以降の描画処理に影響しないよう、viewportを全体へ戻す
       renderer.setViewport(0, 0, canvasWidth, canvasHeight);
+      renderer.autoClear = prevAutoClear;
     }
   }), [directionModeMap, visible]);
 
