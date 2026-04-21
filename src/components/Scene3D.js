@@ -14,6 +14,7 @@ import GeoTerrainWithJGWTexture from './GeoTerrainWithJGWTexture';
 import './Scene3D.css';
 import CameraBookmarkPanel from './CameraBookmarkPanel';
 import EquipmentSearchPanel from './EquipmentSearchPanel';
+import EquipmentBookmarkPanel from './EquipmentBookmarkPanel';
 import AxisDirectionHud from './AxisDirectionHud';
 import SubViewPanel from './SubViewPanel';
 import createCityObjects, { isPipeObject } from './Geometry.js';
@@ -518,6 +519,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showBackground, setShowBackground] = useState(!hideBackground);
   const [showCameraBookmarks, setShowCameraBookmarks] = useState(false);
   const [showEquipmentSearchPanel, setShowEquipmentSearchPanel] = useState(false);
+  const [showEquipmentBookmarksPanel, setShowEquipmentBookmarksPanel] = useState(false);
   const [showSubViews, setShowSubViews] = useState(false);
   const [subViewFollowEnabled, setSubViewFollowEnabled] = useState(true);
   // animateループ内の古いクロージャを避けるため、表示状態はrefにも同期して参照する
@@ -533,6 +535,18 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       const next = !prev;
       if (next) {
         setShowEquipmentSearchPanel(false);
+        setShowEquipmentBookmarksPanel(false);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleEquipmentBookmarksPanel = () => {
+    setShowEquipmentBookmarksPanel((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowCameraBookmarks(false);
+        setShowEquipmentSearchPanel(false);
       }
       return next;
     });
@@ -541,6 +555,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const handleOpenSearchPanel = () => {
     setShowEquipmentSearchPanel(true);
     setShowCameraBookmarks(false);
+    setShowEquipmentBookmarksPanel(false);
   };
 
   const handleToggleSubViews = () => {
@@ -3035,6 +3050,73 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     return true;
   };
 
+  /**
+   * 設備検索パネルで選択中の設備にブックマーク属性を付与して登録する。
+   * attributes.bookmark=1, attributes.bookmark_memo="" を設定し、更新APIへコミットする。
+   *
+   * @param {string} objectKey objectsRef に登録された設備キー
+   * @returns {Promise<{ok: boolean, message: string}>}
+   */
+  const registerEquipmentBookmark = async (objectKey) => {
+    const mesh = objectsRef.current?.[objectKey];
+    if (!mesh?.userData?.objectData) {
+      return { ok: false, message: '対象設備が見つかりません' };
+    }
+
+    const objectData = mesh.userData.objectData;
+    objectData.attributes = objectData.attributes || {};
+    objectData.attributes.bookmark = 1;
+    objectData.attributes.bookmark_memo = '';
+
+    selectedMeshRef.current = mesh;
+    setSelectedObject(objectData);
+    showOutline(mesh);
+
+    objectRegistry.editObject(mesh);
+    const committed = await objectRegistry.commit();
+    if (!committed) {
+      return { ok: false, message: '登録に失敗しました' };
+    }
+
+    setSelectedObject(JSON.parse(JSON.stringify(mesh.userData.objectData)));
+    return { ok: true, message: 'bookmark を登録しました' };
+  };
+
+  /**
+   * ブックマーク登録された設備一覧を返す。
+   * bookmark=1 の設備のみ抽出し、識別番号・メモ・作成日(最終)を表示用に整形する。
+   *
+   * @returns {{key: string, featureId: string, memo: string, lastCreatedAt: string}[]}
+   */
+  const listBookmarkedEquipments = () => {
+    const rows = Object.entries(objectsRef.current || {})
+      .map(([key, mesh]) => {
+        const obj = mesh?.userData?.objectData || {};
+        const attrs = obj.attributes || {};
+        const bookmarkFlag = Number(attrs.bookmark ?? 0);
+        if (bookmarkFlag !== 1) return null;
+
+        const featureId = obj.feature_id != null ? String(obj.feature_id) : '';
+        const memo = attrs.bookmark_memo != null ? String(attrs.bookmark_memo) : '';
+        const lastCreatedAtRaw = obj.updated_at || obj.created_at || '';
+        const lastCreatedAt = lastCreatedAtRaw ? String(lastCreatedAtRaw) : '-';
+
+        const sortTs = Date.parse(lastCreatedAtRaw || '');
+        return {
+          key,
+          featureId,
+          memo,
+          lastCreatedAt,
+          sortTs: Number.isFinite(sortTs) ? sortTs : -Infinity
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.sortTs - a.sortTs)
+      .map(({ sortTs, ...row }) => row);
+
+    return rows;
+  };
+
   // オブジェクトの作成（初回のみ）
   useEffect(() => {
     if (!sceneRef.current || !cityJsonData || !layerData) return;
@@ -3585,7 +3667,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       )}
 
       <div className="scene-top-right-buttons">
-        <button type="button" className="scene-top-right-button">設備</button>
+        <button
+          type="button"
+          className={`scene-top-right-button ${showEquipmentBookmarksPanel ? 'active' : ''}`}
+          onClick={handleToggleEquipmentBookmarksPanel}
+        >
+          設備
+        </button>
         <button
           type="button"
           className={`scene-top-right-button ${showCameraBookmarks ? 'active' : ''}`}
@@ -3647,9 +3735,17 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         <EquipmentSearchPanel
           onSearch={searchEquipmentByKeyword}
           onFocusResult={panCameraToEquipment}
+          onRegisterResult={registerEquipmentBookmark}
           hideInput
           externalKeyword={equipmentSearchKeyword}
           searchRequestId={equipmentSearchRequestId}
+        />
+      )}
+
+      {showEquipmentBookmarksPanel && (
+        <EquipmentBookmarkPanel
+          onListBookmarks={listBookmarkedEquipments}
+          onFocusResult={panCameraToEquipment}
         />
       )}
 

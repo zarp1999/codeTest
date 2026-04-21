@@ -70,3 +70,28 @@
   font-size: 11px;
   opacity: 0.85;
 }
+
+.equipment-search-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.equipment-search-register-button {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.equipment-search-register-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.equipment-search-register-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

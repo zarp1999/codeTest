@@ -8,6 +8,7 @@ import './EquipmentSearchPanel.css';
  * @param {Object} props
  * @param {(keyword: string) => Array<{key: string, featureId: string, material: string, pipeType: string}>} props.onSearch 検索関数
  * @param {(key: string) => boolean} props.onFocusResult 結果クリック時のフォーカス関数
+ * @param {(key: string) => Promise<{ok: boolean, message?: string}>|{ok: boolean, message?: string}} [props.onRegisterResult] 選択結果の登録処理
  * @param {boolean} [props.hideInput=false] true の場合はパネル内入力欄を隠す
  * @param {string} [props.externalKeyword=''] 外部入力欄のキーワード
  * @param {number} [props.searchRequestId=0] Enter押下などの検索実行トリガーID
@@ -16,6 +17,7 @@ import './EquipmentSearchPanel.css';
 function EquipmentSearchPanel({
   onSearch,
   onFocusResult,
+  onRegisterResult,
   hideInput = false,
   externalKeyword = '',
   searchRequestId = 0
@@ -69,6 +71,23 @@ function EquipmentSearchPanel({
     }
   };
 
+  const handleRegisterClick = async () => {
+    if (!selectedKey) {
+      setStatus('登録対象を選択してください');
+      return;
+    }
+    if (typeof onRegisterResult !== 'function') {
+      setStatus('登録処理が利用できません');
+      return;
+    }
+    const result = await onRegisterResult(selectedKey);
+    if (result?.ok) {
+      setStatus(result.message || '登録しました');
+    } else {
+      setStatus(result?.message || '登録に失敗しました');
+    }
+  };
+
   return (
     <div className="equipment-search-panel">
       {!hideInput && (
@@ -112,6 +131,16 @@ function EquipmentSearchPanel({
         </table>
       </div>
       <div className="equipment-search-status">{status}</div>
+      <div className="equipment-search-actions">
+        <button
+          type="button"
+          className="equipment-search-register-button"
+          onClick={handleRegisterClick}
+          disabled={!selectedKey}
+        >
+          登録
+        </button>
+      </div>
     </div>
   );
 }
