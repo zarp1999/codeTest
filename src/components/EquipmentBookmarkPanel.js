@@ -85,22 +85,25 @@ function EquipmentBookmarkPanel({
                 onClick={() => handleRowClick(row)}
               >
                 <td>{row.featureId}</td>
-                <td>{row.memo}</td>
+                <td>
+                  {selectedKey === row.key ? (
+                    <input
+                      type="text"
+                      className="equipment-bookmark-memo-input"
+                      value={memoInput}
+                      onChange={(e) => setMemoInput(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder="メモを入力"
+                    />
+                  ) : (
+                    row.memo
+                  )}
+                </td>
                 <td>{row.lastCreatedAt}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
-      <div className="equipment-bookmark-memo-row">
-        <label htmlFor="equipment-bookmark-memo-input">メモ</label>
-        <input
-          id="equipment-bookmark-memo-input"
-          type="text"
-          value={memoInput}
-          onChange={(e) => setMemoInput(e.target.value)}
-          placeholder="メモを入力"
-        />
       </div>
       <div className="equipment-bookmark-actions">
         <button type="button" onClick={handleRegisterClick}>登録</button>

@@ -56,20 +56,8 @@
   opacity: 0.85;
 }
 
-.equipment-bookmark-memo-row {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.equipment-bookmark-memo-row label {
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.equipment-bookmark-memo-row input {
-  flex: 1 1 auto;
+.equipment-bookmark-memo-input {
+  width: 100%;
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 3px;

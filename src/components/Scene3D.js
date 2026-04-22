@@ -3072,8 +3072,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     const objectData = mesh.userData.objectData;
     objectData.attributes = objectData.attributes || {};
+    // bookmark属性が既存なら値を1に更新し、無い場合は新規追加する
     objectData.attributes.bookmark = 1;
-    objectData.attributes.bookmark_memo = '';
+    // 既存メモは保持し、未定義時のみ初期値を入れる
+    if (!Object.prototype.hasOwnProperty.call(objectData.attributes, 'bookmark_memo')) {
+      objectData.attributes.bookmark_memo = '';
+    }
 
     selectedMeshRef.current = mesh;
     setSelectedObject(objectData);
@@ -3091,11 +3095,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   /**
    * ブックマーク登録された設備一覧を返す。
-   * bookmark=1 の設備のみ抽出し、識別番号・メモ・作成日(最終)を表示用に整形する。
+   * bookmark=1 の設備のみ抽出し、検索キーワードがある場合は一致行のみ返す。
+   * 表示用には識別番号・メモ・作成日(最終)を整形する。
    *
    * @returns {{key: string, featureId: string, memo: string, lastCreatedAt: string}[]}
    */
   const listBookmarkedEquipments = () => {
+    const query = String(equipmentSearchKeyword ?? '').trim().toLowerCase();
+    const tokens = query ? query.split(/[\s\u3000]+/).filter(Boolean) : [];
+
     const rows = Object.entries(objectsRef.current || {})
       .map(([key, mesh]) => {
         const obj = mesh?.userData?.objectData || {};
@@ -3104,9 +3112,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         if (bookmarkFlag !== 1) return null;
 
         const featureId = obj.feature_id != null ? String(obj.feature_id) : '';
+        const material = attrs.material != null ? String(attrs.material) : '';
+        const pipeTypeValue = attrs.pipe_type ?? attrs.pipe_kind ?? '';
+        const pipeType = pipeTypeValue != null ? String(pipeTypeValue) : '';
         const memo = attrs.bookmark_memo != null ? String(attrs.bookmark_memo) : '';
         const lastCreatedAtRaw = obj.updated_at || obj.created_at || '';
         const lastCreatedAt = lastCreatedAtRaw ? String(lastCreatedAtRaw) : '-';
+        const searchableText = `${featureId} ${material} ${pipeType} ${memo}`.toLowerCase();
 
         const sortTs = Date.parse(lastCreatedAtRaw || '');
         return {
@@ -3114,12 +3126,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           featureId,
           memo,
           lastCreatedAt,
+          searchableText,
           sortTs: Number.isFinite(sortTs) ? sortTs : -Infinity
         };
       })
       .filter(Boolean)
+      .filter((row) => tokens.length === 0 || tokens.every((token) => row.searchableText.includes(token)))
       .sort((a, b) => b.sortTs - a.sortTs)
-      .map(({ sortTs, ...row }) => row);
+      .map(({ sortTs, searchableText, ...row }) => row);
 
     return rows;
   };
