@@ -55,3 +55,47 @@
   font-size: 11px;
   opacity: 0.85;
 }
+
+.equipment-bookmark-memo-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.equipment-bookmark-memo-row label {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.equipment-bookmark-memo-row input {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.equipment-bookmark-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.equipment-bookmark-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.equipment-bookmark-actions button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

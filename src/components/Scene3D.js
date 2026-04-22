@@ -513,6 +513,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // 選択されたオブジェクトのstate
   const [selectedObject, setSelectedObject] = useState(null);
   const [showGuides, setShowGuides] = useState(true);
+  const [showAxisHud, setShowAxisHud] = useState(true);
   const [showPipes, setShowPipes] = useState(true);
   const [showFloor, setShowFloor] = useState(true);
   const [showRoad, setShowRoad] = useState(false);
@@ -1742,8 +1743,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return;
     }
 
-    // 4キー
-    if (event.key === '4' && event.repeat) {
+    // 4キー/Bキーは長押しリピートを無視
+    if ((event.key === '4' || event.key.toLowerCase() === 'b') && event.repeat) {
       return;
     }
 
@@ -2278,6 +2279,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       if (keysPressed.current['1']) {
         setShowGuides((prev) => !prev);
         keysPressed.current['1'] = false;
+      }
+
+      // B: Axis HUD表示トグル
+      if (keysPressed.current['b']) {
+        setShowAxisHud((prev) => !prev);
+        keysPressed.current['b'] = false;
       }
 
 
@@ -3117,6 +3124,65 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     return rows;
   };
 
+  /**
+   * 現在カーソル選択中の設備を bookmark=1 で登録する。
+   *
+   * @param {string} memo メモ文字列
+   * @returns {Promise<{ok: boolean, message: string}>}
+   */
+  const registerSelectedEquipmentBookmark = async (memo = '') => {
+    const mesh = selectedMeshRef.current;
+    if (!mesh?.userData?.objectData) {
+      return { ok: false, message: '選択中の設備がありません' };
+    }
+
+    const objectData = mesh.userData.objectData;
+    objectData.attributes = objectData.attributes || {};
+    objectData.attributes.bookmark = 1;
+    objectData.attributes.bookmark_memo = String(memo ?? '');
+
+    setSelectedObject(objectData);
+    showOutline(mesh);
+    objectRegistry.editObject(mesh);
+
+    const committed = await objectRegistry.commit();
+    if (!committed) {
+      return { ok: false, message: '登録に失敗しました' };
+    }
+
+    setSelectedObject(JSON.parse(JSON.stringify(mesh.userData.objectData)));
+    return { ok: true, message: 'ブックマークを登録しました' };
+  };
+
+  /**
+   * 現在カーソル選択中の設備の bookmark を解除する。
+   * bookmark を null にして登録する。
+   *
+   * @returns {Promise<{ok: boolean, message: string}>}
+   */
+  const deleteSelectedEquipmentBookmark = async () => {
+    const mesh = selectedMeshRef.current;
+    if (!mesh?.userData?.objectData) {
+      return { ok: false, message: '選択中の設備がありません' };
+    }
+
+    const objectData = mesh.userData.objectData;
+    objectData.attributes = objectData.attributes || {};
+    objectData.attributes.bookmark = null;
+
+    setSelectedObject(objectData);
+    showOutline(mesh);
+    objectRegistry.editObject(mesh);
+
+    const committed = await objectRegistry.commit();
+    if (!committed) {
+      return { ok: false, message: '削除に失敗しました' };
+    }
+
+    setSelectedObject(JSON.parse(JSON.stringify(mesh.userData.objectData)));
+    return { ok: true, message: 'ブックマークを削除しました' };
+  };
+
   // オブジェクトの作成（初回のみ）
   useEffect(() => {
     if (!sceneRef.current || !cityJsonData || !layerData) return;
@@ -3716,11 +3782,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             }
           }}
         />
-        <AxisDirectionHud
-          cameraRef={cameraRef}
-          activeCameraTypeRef={activeCameraTypeRef}
-          cameraInfo={cameraInfo}
-        />
+        {showAxisHud && (
+          <AxisDirectionHud
+            cameraRef={cameraRef}
+            activeCameraTypeRef={activeCameraTypeRef}
+            cameraInfo={cameraInfo}
+          />
+        )}
       </div>
 
       {showCameraBookmarks && (
@@ -3746,6 +3814,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         <EquipmentBookmarkPanel
           onListBookmarks={listBookmarkedEquipments}
           onFocusResult={panCameraToEquipment}
+          onRegisterBookmark={registerSelectedEquipmentBookmark}
+          onDeleteBookmark={deleteSelectedEquipmentBookmark}
         />
       )}
 
