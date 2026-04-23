@@ -1141,6 +1141,57 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     sectionDragPreviewLineRef.current = previewLine;
   };
 
+  /**
+   * 断面平面の再現に必要な情報をJSONログとして出力する。
+   * @param {Object} params
+   * @param {string} params.source 生成トリガーの種類
+   * @param {THREE.Object3D|null} params.pipeObject 対象オブジェクト
+   * @param {THREE.Vector3|null} params.clickPoint 断面作成トリガー点
+   * @param {number} [params.gridAngle=0] グリッド角度
+   * @param {boolean} [params.autoModeEnabled=false] 自動モード有効フラグ
+   */
+  const logCrossSectionPlaneInfo = ({
+    source,
+    pipeObject = null,
+    clickPoint = null,
+    gridAngle = 0,
+    autoModeEnabled = false
+  }) => {
+    if (!crossSectionRef.current) return;
+
+    const planePointRaw =
+      typeof crossSectionRef.current.getCurrentPlaneCenter === 'function'
+        ? crossSectionRef.current.getCurrentPlaneCenter()
+        : null;
+    const planeNormalRaw =
+      typeof crossSectionRef.current.getCurrentPlaneNormal === 'function'
+        ? crossSectionRef.current.getCurrentPlaneNormal()
+        : null;
+
+    const normalizeVector = (vector) => {
+      if (!vector || typeof vector.lengthSq !== 'function' || vector.lengthSq() <= 1e-12) {
+        return null;
+      }
+      return vector.clone().normalize();
+    };
+    const toXYZ = (vector) => {
+      if (!vector) return null;
+      return { x: vector.x, y: vector.y, z: vector.z };
+    };
+
+    const payload = {
+      ts: new Date().toISOString(),
+      source: String(source || 'unknown'),
+      featureId: pipeObject?.userData?.objectData?.feature_id ?? null,
+      clickPoint: toXYZ(clickPoint),
+      planePoint: toXYZ(planePointRaw),
+      planeNormal: toXYZ(normalizeVector(planeNormalRaw)),
+      gridAngle: Number.isFinite(gridAngle) ? gridAngle : 0,
+      autoModeEnabled: Boolean(autoModeEnabled)
+    };
+    console.log('[CrossSectionPlaneInfo]', JSON.stringify(payload));
+  };
+
   // クリックハンドラー
   const handleClick = (event) => {
     if (isSubViewInteraction(event)) {
@@ -1203,7 +1254,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         } else if (enableCrossSectionMode && crossSectionRef.current) {
           // 断面生成
           crossSectionRef.current.createCrossSection(clickedObject, clickPoint, objectsRef, geo);
-          console.log('断面を生成:', clickedObject.userData.objectData, 'クリック位置:', clickPoint);
+          logCrossSectionPlaneInfo({
+            source: 'cross-section-click',
+            pipeObject: clickedObject,
+            clickPoint,
+            gridAngle: 0,
+            autoModeEnabled: false
+          });
 
         } else {
           // 通常モードの場合は選択
@@ -1236,6 +1293,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               );
               const gridAngle = closestSection.angle || 0;
               crossSectionRef.current.createCrossSection(clickedObject, sectionClickPoint, objectsRef, geo, gridAngle, true);
+              logCrossSectionPlaneInfo({
+                source: 'closest-generated-section',
+                pipeObject: clickedObject,
+                clickPoint: sectionClickPoint,
+                gridAngle,
+                autoModeEnabled: true
+              });
             }
           }
         }
@@ -3059,24 +3123,30 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   /**
    * 設備検索パネルで選択中の設備にブックマーク属性を付与して登録する。
-   * attributes.bookmark=1, attributes.bookmark_memo="" を設定し、更新APIへコミットする。
+   * attributes.bookmark=1 を設定し、bookmark_memo が未設定/空の場合は
+   * 現在日時（例: [2025-11-25 14:53:42]）を初期値として設定して更新APIへコミットする。
    *
-   * @param {string} objectKey objectsRef に登録された設備キー
+   * @param {string|null|undefined} objectKey objectsRef に登録された設備キー（未指定時は現在3D選択中を対象）
    * @returns {Promise<{ok: boolean, message: string}>}
    */
   const registerEquipmentBookmark = async (objectKey) => {
-    const mesh = objectsRef.current?.[objectKey];
+    const mesh = objectKey ? objectsRef.current?.[objectKey] : selectedMeshRef.current;
     if (!mesh?.userData?.objectData) {
-      return { ok: false, message: '対象設備が見つかりません' };
+      return { ok: false, message: '登録対象が選択されていません' };
     }
 
     const objectData = mesh.userData.objectData;
     objectData.attributes = objectData.attributes || {};
     // bookmark属性が既存なら値を1に更新し、無い場合は新規追加する
     objectData.attributes.bookmark = 1;
-    // 既存メモは保持し、未定義時のみ初期値を入れる
-    if (!Object.prototype.hasOwnProperty.call(objectData.attributes, 'bookmark_memo')) {
-      objectData.attributes.bookmark_memo = '';
+    // 既存メモは保持し、未設定/空文字の場合のみ現在日時を初期値として入れる
+    const memoRaw = objectData.attributes.bookmark_memo;
+    const memoText = memoRaw == null ? '' : String(memoRaw).trim();
+    if (!memoText) {
+      const now = new Date();
+      const pad2 = (value) => String(value).padStart(2, '0');
+      const formattedNow = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+      objectData.attributes.bookmark_memo = `[${formattedNow}]`;
     }
 
     selectedMeshRef.current = mesh;
@@ -3139,21 +3209,43 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   };
 
   /**
-   * 現在カーソル選択中の設備を bookmark=1 で登録する。
+   * 設備ブックマークを bookmark=1 で登録する。
+   * テーブル選択がある場合はその設備を優先し、未選択時は3Dビューで選択中の設備を対象にする。
+   * 対象設備に bookmark が無い場合は、bookmark_memo に現在日時を初期設定する。
    *
+   * @param {string|null} objectKey テーブルで選択中の設備キー
    * @param {string} memo メモ文字列
    * @returns {Promise<{ok: boolean, message: string}>}
    */
-  const registerSelectedEquipmentBookmark = async (memo = '') => {
-    const mesh = selectedMeshRef.current;
+  const registerSelectedEquipmentBookmark = async (objectKey = null, memo = '') => {
+    const mesh = objectKey ? objectsRef.current?.[objectKey] : selectedMeshRef.current;
     if (!mesh?.userData?.objectData) {
       return { ok: false, message: '選択中の設備がありません' };
     }
 
     const objectData = mesh.userData.objectData;
     objectData.attributes = objectData.attributes || {};
-    objectData.attributes.bookmark = 1;
-    objectData.attributes.bookmark_memo = String(memo ?? '');
+    const attrs = objectData.attributes;
+    const hasBookmark = Number(attrs.bookmark ?? 0) === 1;
+    const memoText = memo == null ? '' : String(memo);
+    const memoTrimmed = memoText.trim();
+
+    attrs.bookmark = 1;
+
+    if (!hasBookmark) {
+      if (memoTrimmed) {
+        attrs.bookmark_memo = memoText;
+      } else {
+        const now = new Date();
+        const pad2 = (value) => String(value).padStart(2, '0');
+        const formattedNow = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+        attrs.bookmark_memo = `[${formattedNow}]`;
+      }
+    } else if (memoText !== '') {
+      attrs.bookmark_memo = memoText;
+    } else if (!Object.prototype.hasOwnProperty.call(attrs, 'bookmark_memo')) {
+      attrs.bookmark_memo = '';
+    }
 
     setSelectedObject(objectData);
     showOutline(mesh);
@@ -3640,6 +3732,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           crossSectionRef.current.clear();
           const geo = terrainViewerRef.current.terrainMeshRef?.geometry;
           crossSectionRef.current.createCrossSection(selectedPipe, clickPoint, objectRegistry, geo, gridAngle, true);
+          logCrossSectionPlaneInfo({
+            source: 'section-view',
+            pipeObject: selectedPipe,
+            clickPoint,
+            gridAngle,
+            autoModeEnabled: true
+          });
           crossSectionRef.current.toggleCrossSections(true);
           if (typeof crossSectionRef.current.toggleAttributeLabels === 'function') {
             crossSectionRef.current.toggleAttributeLabels(true);

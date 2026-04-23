@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './EquipmentBookmarkPanel.css';
 
 /**
@@ -6,9 +6,9 @@ import './EquipmentBookmarkPanel.css';
  * bookmark=1 の設備のみを表示する。
  *
  * @param {Object} props
- * @param {() => Array<{key: string, featureId: string, memo: string, lastCreatedAt: string}>} props.onListBookmarks 一覧取得関数
+ * @param {() => Array<{key: string, featureId: string, memo: string}>} props.onListBookmarks 一覧取得関数
  * @param {(key: string) => boolean} [props.onFocusResult] 行クリック時のフォーカス関数
- * @param {(memo: string) => Promise<{ok: boolean, message?: string}>|{ok: boolean, message?: string}} [props.onRegisterBookmark] 現在選択中設備の登録
+ * @param {(key: string|null, memo: string) => Promise<{ok: boolean, message?: string}>|{ok: boolean, message?: string}} [props.onRegisterBookmark] テーブル選択中設備または現在3D選択中設備の登録
  * @param {() => Promise<{ok: boolean, message?: string}>|{ok: boolean, message?: string}} [props.onDeleteBookmark] 現在選択中設備の削除
  * @returns {JSX.Element}
  */
@@ -20,6 +20,7 @@ function EquipmentBookmarkPanel({
 }) {
   const [selectedKey, setSelectedKey] = useState(null);
   const [memoInput, setMemoInput] = useState('');
+  const [memoDrafts, setMemoDrafts] = useState({});
   const [status, setStatus] = useState('');
 
   const rows = useMemo(() => {
@@ -27,9 +28,26 @@ function EquipmentBookmarkPanel({
     return Array.isArray(listedRaw) ? listedRaw : [];
   }, [onListBookmarks, selectedKey]);
 
+  useEffect(() => {
+    setMemoDrafts((prev) => {
+      const next = {};
+      rows.forEach((row) => {
+        next[row.key] = Object.prototype.hasOwnProperty.call(prev, row.key) ? prev[row.key] : (row.memo || '');
+      });
+      return next;
+    });
+  }, [rows]);
+
+  const handleMemoChange = (key, memo) => {
+    setMemoDrafts((prev) => ({ ...prev, [key]: memo }));
+    if (selectedKey === key) {
+      setMemoInput(memo);
+    }
+  };
+
   const handleRowClick = (row) => {
     setSelectedKey(row.key);
-    setMemoInput(row.memo || '');
+    setMemoInput(memoDrafts[row.key] ?? row.memo ?? '');
     const moved = onFocusResult?.(row.key);
     if (moved) {
       setStatus(`Feature ID ${row.featureId || '-'} を中心へ移動しました`);
@@ -43,7 +61,8 @@ function EquipmentBookmarkPanel({
       setStatus('登録処理が利用できません');
       return;
     }
-    const result = await onRegisterBookmark(memoInput);
+    const memoToRegister = selectedKey ? (memoDrafts[selectedKey] ?? memoInput) : memoInput;
+    const result = await onRegisterBookmark(selectedKey, memoToRegister);
     if (result?.ok) {
       setStatus(result.message || '登録しました');
     } else {
@@ -74,7 +93,6 @@ function EquipmentBookmarkPanel({
             <tr>
               <th>識別番号</th>
               <th>メモ</th>
-              <th>作成日(最終)</th>
             </tr>
           </thead>
           <tbody>
@@ -85,21 +103,16 @@ function EquipmentBookmarkPanel({
                 onClick={() => handleRowClick(row)}
               >
                 <td>{row.featureId}</td>
-                <td>
-                  {selectedKey === row.key ? (
-                    <input
-                      type="text"
-                      className="equipment-bookmark-memo-input"
-                      value={memoInput}
-                      onChange={(e) => setMemoInput(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      placeholder="メモを入力"
-                    />
-                  ) : (
-                    row.memo
-                  )}
+                <td onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    className="equipment-bookmark-memo-input"
+                    value={memoDrafts[row.key] ?? row.memo ?? ''}
+                    onChange={(e) => handleMemoChange(row.key, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="メモを入力"
+                  />
                 </td>
-                <td>{row.lastCreatedAt}</td>
               </tr>
             ))}
           </tbody>
