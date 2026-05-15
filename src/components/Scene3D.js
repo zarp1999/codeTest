@@ -925,6 +925,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               true,
               dragDirection
             );
+            logCrossSectionPlaneInfo({
+              source: 'cross-section-drag',
+              pipeObject: sectionDragTargetRef.current,
+              clickPoint: dragStart,
+              gridAngle: 0,
+              autoModeEnabled: true
+            });
             skipNextSectionClickRef.current = true;
           }
         }
@@ -1167,6 +1174,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       typeof crossSectionRef.current.getCurrentPlaneNormal === 'function'
         ? crossSectionRef.current.getCurrentPlaneNormal()
         : null;
+    const gridDirectionRaw =
+      typeof crossSectionRef.current.getCurrentGridDirection === 'function'
+        ? crossSectionRef.current.getCurrentGridDirection()
+        : null;
 
     const normalizeVector = (vector) => {
       if (!vector || typeof vector.lengthSq !== 'function' || vector.lengthSq() <= 1e-12) {
@@ -1186,6 +1197,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       clickPoint: toXYZ(clickPoint),
       planePoint: toXYZ(planePointRaw),
       planeNormal: toXYZ(normalizeVector(planeNormalRaw)),
+      gridDirection: toXYZ(normalizeVector(gridDirectionRaw)),
       gridAngle: Number.isFinite(gridAngle) ? gridAngle : 0,
       autoModeEnabled: Boolean(autoModeEnabled)
     };
@@ -2216,13 +2228,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       const speed = keysPressed.current['shift']
         ? SCENE3D_CONFIG.movement.slowSpeed
         : SCENE3D_CONFIG.movement.normalSpeed; // Shiftで低速
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-      const up = new THREE.Vector3(0, 1, 0);
+      // Unity版に合わせて、WASDQEをカメラローカル座標6軸として扱う。
+      // W/S: camera up/down, A/D: camera left/right, Q/E: camera backward/forward
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
 
       let cameraMoved = false;
 
-      // W:上 S:下
+      // W:上(local up) / S:下(local down)
       if (keysPressed.current['w'] || keysPressed.current['arrowup']) {
         camera.position.add(up.clone().multiplyScalar(speed));
         cameraMoved = true;
@@ -2232,7 +2246,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         cameraMoved = true;
       }
 
-      // A:左 D:右
+      // A:左(local left) / D:右(local right)
       if (keysPressed.current['a'] || keysPressed.current['arrowleft']) {
         camera.position.add(right.clone().multiplyScalar(-speed));
         cameraMoved = true;
@@ -2242,7 +2256,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         cameraMoved = true;
       }
 
-      // Q:後進 E:前進
+      // Q:後進(local backward) / E:前進(local forward)
       if (keysPressed.current['q']) {
         camera.position.add(forward.clone().multiplyScalar(-speed));
         cameraMoved = true;

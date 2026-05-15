@@ -43,8 +43,13 @@ export function formatPipeAttributeLabel(objectData) {
     diameterMm = diameterMm * 1000;
   }
   const diameterText = diameterMm != null ? `${Math.round(diameterMm)}mm` : '-';
+  const colText = attrs.col != null && String(attrs.col).trim() !== '' ? `col:${attrs.col}` : null;
+  const rowText = attrs.row != null && String(attrs.row).trim() !== '' ? `row:${attrs.row}` : null;
+  const optionalText = [colText, rowText].filter(Boolean).join(' ');
 
-  return `(${pipeKind} ${material} ${diameterText})`;
+  return optionalText
+    ? `(${pipeKind} ${material} ${diameterText} ${optionalText})`
+    : `(${pipeKind} ${material} ${diameterText})`;
 }
 
 export function createTextLabelSprite(text, config = ATTRIBUTE_LABEL_CONFIG, renderOrder = 9999) {
@@ -145,7 +150,9 @@ export function resolveAttributeLabelOverlaps({
     placedRects.push(rect);
 
     const totalOffsetPx = minOffsetPx + (step * verticalStepPx);
-    const worldOffset = camera.up.clone().normalize().multiplyScalar(-totalOffsetPx * item.worldPerPixel);
+    const rawWorldOffset = totalOffsetPx * item.worldPerPixel;
+    const cappedWorldOffset = Math.min(rawWorldOffset, Math.max(maxWorldOffset, 0));
+    const worldOffset = camera.up.clone().normalize().multiplyScalar(-cappedWorldOffset);
     item.entry.sprite.position.copy(item.entry.anchorPosition.clone().add(worldOffset));
   }
 }

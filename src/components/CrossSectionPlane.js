@@ -320,6 +320,14 @@ class CrossSectionPlane {
   }
 
   /**
+   * 現在のグリッド線方向ベクトルを取得
+   * @returns {THREE.Vector3}
+   */
+  getCurrentGridDirection() {
+    return this.currentGridDirection ? this.currentGridDirection.clone() : new THREE.Vector3(1, 0, 0);
+  }
+
+  /**
    * 断面と縦線の対応付け用キーを生成
    * @param {THREE.Object3D} pipeObject
    * @param {number} crossSectionZ
