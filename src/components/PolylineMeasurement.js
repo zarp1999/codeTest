@@ -13,7 +13,7 @@ const POLYLINE_MEASUREMENT_CONFIG = {
   },
   label: {
     canvasWidth: 1024,
-    canvasHeight: 256,
+    canvasHeight: 384,
     shadowColor: 'rgba(0, 0, 0, 0.9)',
     shadowBlur: 10,
     shadowOffsetX: 2,
@@ -21,14 +21,14 @@ const POLYLINE_MEASUREMENT_CONFIG = {
     color: '#ff4db8',
     font: 'Bold 100px Arial',
     baseScaleX: 2.4,
-    baseScaleY: 0.6,
+    baseScaleY: 0.8,
     renderOrder: 9501,
     scale: {
       baseDistance: 20,
       baseScale: 2.4,
       minScale: 0.8,
       maxScale: 6.0,
-      yRatio: 0.25,
+      yRatio: 0.34,
     },
   },
 };
@@ -49,7 +49,7 @@ class PolylineMeasurement {
 
     this.domElement = null;
     this.points = [];
-    this.segments = []; // { line, sprite, texture, sectionIndex, sectionDistance, cumulativeDistance }
+    this.segments = []; // { line, sprite, texture, sectionIndex, sectionDistance, cumulativeDistance, horizontalDistance, verticalDistance }
     this.labelMode = 'section'; // 'section' | 'cumulative'
 
     this.handleMouseDown = this.handleMouseDown.bind(this);
@@ -133,6 +133,8 @@ class PolylineMeasurement {
 
   createSegment(start, end, sectionIndex) {
     const distance = start.distanceTo(end);
+    const horizontalDistance = new THREE.Vector2(start.x, start.z).distanceTo(new THREE.Vector2(end.x, end.z));
+    const verticalDistance = Math.abs(end.y - start.y);
     const midPoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
     const cumulativeDistance = (this.segments[this.segments.length - 1]?.cumulativeDistance || 0) + distance;
 
@@ -158,12 +160,27 @@ class PolylineMeasurement {
     line.renderOrder = POLYLINE_MEASUREMENT_CONFIG.line.renderOrder;
     this.scene.add(line);
 
-    const { sprite, texture } = this.createDistanceLabel(sectionIndex, distance, cumulativeDistance);
+    const { sprite, texture } = this.createDistanceLabel(
+      sectionIndex,
+      distance,
+      cumulativeDistance,
+      horizontalDistance,
+      verticalDistance
+    );
     sprite.position.copy(midPoint);
     sprite.renderOrder = POLYLINE_MEASUREMENT_CONFIG.label.renderOrder;
     this.scene.add(sprite);
 
-    this.segments.push({ line, sprite, texture, sectionIndex, sectionDistance: distance, cumulativeDistance });
+    this.segments.push({
+      line,
+      sprite,
+      texture,
+      sectionIndex,
+      sectionDistance: distance,
+      cumulativeDistance,
+      horizontalDistance,
+      verticalDistance
+    });
   }
 
   formatDistanceLabel(sectionIndex, sectionDistance, cumulativeDistance) {
@@ -173,7 +190,7 @@ class PolylineMeasurement {
     return `(区間${sectionIndex}:${sectionDistance.toFixed(3)}[m])`;
   }
 
-  createDistanceLabel(sectionIndex, sectionDistance, cumulativeDistance) {
+  createDistanceLabel(sectionIndex, sectionDistance, cumulativeDistance, horizontalDistance = null, verticalDistance = null) {
     const canvas = document.createElement('canvas');
     canvas.width = POLYLINE_MEASUREMENT_CONFIG.label.canvasWidth;
     canvas.height = POLYLINE_MEASUREMENT_CONFIG.label.canvasHeight;
@@ -188,6 +205,7 @@ class PolylineMeasurement {
         POLYLINE_MEASUREMENT_CONFIG.label.baseScaleY,
         1
       );
+      sprite.userData.hasHorizontalVertical = horizontalDistance !== null && verticalDistance !== null;
       return { sprite, texture };
     }
 
@@ -201,7 +219,18 @@ class PolylineMeasurement {
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     const labelText = this.formatDistanceLabel(sectionIndex, sectionDistance, cumulativeDistance);
-    context.fillText(labelText, canvas.width / 2, canvas.height / 2);
+    const hasHorizontalVertical = horizontalDistance !== null && verticalDistance !== null;
+
+    if (hasHorizontalVertical) {
+      const lineHeight = 120;
+      const startY = canvas.height / 2 - lineHeight;
+      context.fillText(labelText, canvas.width / 2, startY);
+      context.font = 'Bold 88px Arial';
+      context.fillText(`水平: ${horizontalDistance.toFixed(3)}[m]`, canvas.width / 2, startY + lineHeight);
+      context.fillText(`鉛直: ${verticalDistance.toFixed(3)}[m]`, canvas.width / 2, startY + lineHeight * 2);
+    } else {
+      context.fillText(labelText, canvas.width / 2, canvas.height / 2);
+    }
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
@@ -217,14 +246,29 @@ class PolylineMeasurement {
       POLYLINE_MEASUREMENT_CONFIG.label.baseScaleY,
       1
     );
+    sprite.userData.hasHorizontalVertical = hasHorizontalVertical;
     return { sprite, texture };
   }
 
   updateAllLabels() {
     this.segments.forEach((segment) => {
-      const { sprite, texture, sectionIndex, sectionDistance, cumulativeDistance } = segment;
+      const {
+        sprite,
+        texture,
+        sectionIndex,
+        sectionDistance,
+        cumulativeDistance,
+        horizontalDistance,
+        verticalDistance
+      } = segment;
       if (!sprite) return;
-      const { texture: newTexture } = this.createDistanceLabel(sectionIndex, sectionDistance, cumulativeDistance);
+      const { texture: newTexture } = this.createDistanceLabel(
+        sectionIndex,
+        sectionDistance,
+        cumulativeDistance,
+        horizontalDistance,
+        verticalDistance
+      );
       if (sprite.material?.map) {
         sprite.material.map.dispose();
       }
