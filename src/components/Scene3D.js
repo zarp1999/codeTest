@@ -2017,8 +2017,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       const sensitivity = 0.003;
 
       // yaw/pitchを更新（yawは無制限）
-      rightDragYawPitchRef.current.yaw -= dx * sensitivity;
-      rightDragYawPitchRef.current.pitch -= dy * sensitivity;
+      rightDragYawPitchRef.current.yaw += dx * sensitivity;
+      rightDragYawPitchRef.current.pitch += dy * sensitivity;
 
       // Pitchをクランプ（ひっくり返り防止）
       const pitchLimit = Math.PI / 2 - 0.01;

@@ -29,6 +29,8 @@ class DistanceMeasurement {
     this.closestLines = [];      // 近接距離の線（青）の配列
     this.measurementTexts = [];  // 指定距離のテキストスプライトの配列
     this.closestTexts = [];      // 近接距離のテキストスプライトの配列
+    this.measurementEndpointTexts = []; // 指定距離の始点/終点情報テキスト
+    this.closestEndpointTexts = [];     // 近接距離の始点/終点情報テキスト
     this.measurementPoints = [];
     this.textMesh = null;
     this.previewLine = null; // プレビュー線
@@ -42,6 +44,8 @@ class DistanceMeasurement {
     // テキストの位置情報（スケール調整用）- 配列で管理
     this.measurementTextPositions = [];
     this.closestTextPositions = [];
+    this.measurementEndpointTextPositions = [];
+    this.closestEndpointTextPositions = [];
 
     // 表示状態管理
     this.showClosest = true;   // 近接距離を表示
@@ -543,6 +547,16 @@ class DistanceMeasurement {
     for (const text of this.measurementTexts) {
       if (text) text.visible = this.showSpecified;
     }
+
+    // 指定距離の始点/終点情報テキスト
+    for (const text of this.measurementEndpointTexts) {
+      if (text) text.visible = this.showSpecified;
+    }
+
+    // 近接距離の始点/終点情報テキスト
+    for (const text of this.closestEndpointTexts) {
+      if (text) text.visible = this.showClosest;
+    }
   }
 
   /**
@@ -680,9 +694,8 @@ class DistanceMeasurement {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     
-    // 近接距離で水平・鉛直距離を表示する場合は、キャンバスを高くする
-    // 断面図生成画面の場合のみ表示
-    const hasHorizontalVertical = this.enableCrossSectionMode && lineType === 'closest' && horizontalDistance !== null && verticalDistance !== null;
+    // 水平・鉛直距離を表示する場合は、キャンバスを高くする
+    const hasHorizontalVertical = horizontalDistance !== null && verticalDistance !== null;
     canvas.width = 1024;
     canvas.height = hasHorizontalVertical ? 384 : 256; // 水平・鉛直距離がある場合は高さを増やす
 
@@ -702,7 +715,7 @@ class DistanceMeasurement {
     context.textBaseline = 'middle';
     
     if (hasHorizontalVertical) {
-      // 近接距離の場合：距離、水平距離、鉛直距離を3行で表示
+      // 距離、水平距離、鉛直距離を3行で表示
       const lineHeight = 128;
       const startY = canvas.height / 2 - lineHeight / 2;
       
@@ -757,6 +770,65 @@ class DistanceMeasurement {
   }
 
   /**
+   * 計測線の始点/終点に識別番号と座標を表示する
+   * @param {THREE.Vector3} position - ラベル表示位置
+   * @param {string|number} pipeId - 管路の識別番号
+   * @param {string} lineType - 線のタイプ（'specified' or 'closest'）
+   * @param {'start'|'end'} endpointType - 始点/終点
+   */
+  drawEndpointInfoText(position, pipeId, lineType = 'specified', endpointType = 'start') {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 1400;
+    canvas.height = 320;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    context.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    context.shadowBlur = 10;
+    context.shadowOffsetX = 3;
+    context.shadowOffsetY = 3;
+    context.fillStyle = 'white';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    const idText = `(識別番号: ${pipeId ?? '-'})`;
+    const coordText = `(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`;
+
+    context.font = 'Bold 92px Arial';
+    context.fillText(idText, canvas.width / 2, 120);
+    context.font = 'Bold 80px Arial';
+    context.fillText(coordText, canvas.width / 2, 220);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      depthTest: false,
+      transparent: true
+    });
+    const textSprite = new THREE.Sprite(spriteMaterial);
+
+    // 始点/終点で少し縦方向オフセットをずらして重なりを緩和する
+    const yOffset = endpointType === 'start' ? 0.25 : -0.25;
+    const textPosition = position.clone().add(new THREE.Vector3(0, yOffset, 0));
+    textSprite.position.copy(textPosition);
+    textSprite.scale.set(1.8, 0.6, 1);
+    textSprite.userData.isEndpointInfo = true;
+
+    if (lineType === 'closest') {
+      this.closestEndpointTexts.push(textSprite);
+      this.closestEndpointTextPositions.push(textPosition.clone());
+      textSprite.visible = this.showClosest;
+    } else {
+      this.measurementEndpointTexts.push(textSprite);
+      this.measurementEndpointTextPositions.push(textPosition.clone());
+      textSprite.visible = this.showSpecified;
+    }
+
+    this.scene.add(textSprite);
+  }
+
+  /**
    * 計測点を描画
    */
   drawMeasurementPoint(position, color) {
@@ -792,6 +864,9 @@ class DistanceMeasurement {
     const specifiedPointA = this.startPoint.clone();
     const specifiedPointB = this.endPoint.clone();
     const specifiedDistance = specifiedPointA.distanceTo(specifiedPointB);
+    const specifiedHorizontalDistance = new THREE.Vector2(specifiedPointA.x, specifiedPointA.z)
+      .distanceTo(new THREE.Vector2(specifiedPointB.x, specifiedPointB.z));
+    const specifiedVerticalDistance = Math.abs(specifiedPointA.y - specifiedPointB.y);
 
     // 計測結果のベース
     let measurementData = {
@@ -806,7 +881,9 @@ class DistanceMeasurement {
       specified: {
         pointA: specifiedPointA,
         pointB: specifiedPointB,
-        distance: specifiedDistance
+        distance: specifiedDistance,
+        horizontalDistance: specifiedHorizontalDistance,
+        verticalDistance: specifiedVerticalDistance
       }
     };
 
@@ -846,7 +923,17 @@ class DistanceMeasurement {
     this.measurementResult = measurementData;
 
     // 指定距離の計測線を描画（赤色）
-    this.drawMeasurementLine(specifiedPointA, specifiedPointB, specifiedDistance, 'red', 'specified');
+    this.drawMeasurementLine(
+      specifiedPointA,
+      specifiedPointB,
+      specifiedDistance,
+      'red',
+      'specified',
+      specifiedHorizontalDistance,
+      specifiedVerticalDistance
+    );
+    this.drawEndpointInfoText(specifiedPointA, measurementData.pipeA.id, 'specified', 'start');
+    this.drawEndpointInfoText(specifiedPointB, measurementData.pipeB.id, 'specified', 'end');
 
     // 近接距離の計測線を描画（青色）
     if (measurementData.closest) {
@@ -859,6 +946,8 @@ class DistanceMeasurement {
         measurementData.closest.horizontalDistance,
         measurementData.closest.verticalDistance
       );
+      this.drawEndpointInfoText(measurementData.closest.pointA, measurementData.pipeA.id, 'closest', 'start');
+      this.drawEndpointInfoText(measurementData.closest.pointB, measurementData.pipeB.id, 'closest', 'end');
     }
 
     // 結果更新コールバックを呼び出し
@@ -1228,6 +1317,28 @@ class DistanceMeasurement {
         text.scale.set(scaleFactor, yScale, 1);
       }
     }
+
+    // 指定距離の始点/終点情報テキストスケール更新
+    for (let i = 0; i < this.measurementEndpointTexts.length; i++) {
+      const text = this.measurementEndpointTexts[i];
+      const position = this.measurementEndpointTextPositions[i];
+      if (text && position) {
+        const distance = this.camera.position.distanceTo(position);
+        const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
+        text.scale.set(scaleFactor * 0.9, scaleFactor * 0.3, 1);
+      }
+    }
+
+    // 近接距離の始点/終点情報テキストスケール更新
+    for (let i = 0; i < this.closestEndpointTexts.length; i++) {
+      const text = this.closestEndpointTexts[i];
+      const position = this.closestEndpointTextPositions[i];
+      if (text && position) {
+        const distance = this.camera.position.distanceTo(position);
+        const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
+        text.scale.set(scaleFactor * 0.9, scaleFactor * 0.3, 1);
+      }
+    }
   }
 
   /**
@@ -1267,6 +1378,18 @@ class DistanceMeasurement {
     });
     this.measurementTexts = [];
 
+    // 指定距離の始点/終点情報テキストを削除
+    this.measurementEndpointTexts.forEach(text => {
+      if (text) {
+        this.scene.remove(text);
+        if (text.material.map) {
+          text.material.map.dispose();
+        }
+        text.material.dispose();
+      }
+    });
+    this.measurementEndpointTexts = [];
+
     // すべての近接距離の計測線を削除（青）
     this.closestLines.forEach(line => {
       if (line) {
@@ -1291,6 +1414,18 @@ class DistanceMeasurement {
       }
     });
     this.closestTexts = [];
+
+    // 近接距離の始点/終点情報テキストを削除
+    this.closestEndpointTexts.forEach(text => {
+      if (text) {
+        this.scene.remove(text);
+        if (text.material.map) {
+          text.material.map.dispose();
+        }
+        text.material.dispose();
+      }
+    });
+    this.closestEndpointTexts = [];
 
     // 旧テキストを削除（互換性のため）
     if (this.textMesh) {
@@ -1324,6 +1459,8 @@ class DistanceMeasurement {
     // テキストの位置情報をクリア
     this.measurementTextPositions = [];
     this.closestTextPositions = [];
+    this.measurementEndpointTextPositions = [];
+    this.closestEndpointTextPositions = [];
 
     // 計測結果をクリア
     this.measurementResult = null;
