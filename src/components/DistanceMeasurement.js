@@ -2,6 +2,97 @@ import React from 'react';
 import * as THREE from 'three';
 import './DistanceMeasurement.css';
 
+const DISTANCE_MEASUREMENT_CONFIG = Object.freeze({
+  interaction: {
+    maxPreviewDistance: 1000,
+  },
+  highlight: {
+    emissiveIntensity: 0.5,
+    clearEmissiveIntensity: 0,
+  },
+  previewLine: {
+    width: 0.15,
+    color: 0xff0000,
+    opacity: 0.5,
+  },
+  measurementLine: {
+    width: 0.15,
+    closestColor: 0x0000ff,
+    specifiedColor: 0xff0000,
+    opacity: 0.8,
+  },
+  distanceLabel: {
+    canvasWidth: 1024,
+    canvasHeight: {
+      default: 256,
+      withHorizontalVertical: 384,
+    },
+    shadow: {
+      color: 'rgba(0, 0, 0, 0.9)',
+      blur: 12,
+      offsetX: 3,
+      offsetY: 3,
+    },
+    text: {
+      color: 'white',
+      mainFont: 'Bold 120px Arial',
+      subFont: 'Bold 100px Arial',
+      lineHeight: 128,
+    },
+    spriteScale: {
+      x: 2,
+      y: {
+        default: 0.5,
+        withHorizontalVertical: 0.75,
+      },
+    },
+  },
+  endpointLabel: {
+    canvasWidth: 1400,
+    canvasHeight: 320,
+    shadow: {
+      color: 'rgba(0, 0, 0, 0.9)',
+      blur: 10,
+      offsetX: 3,
+      offsetY: 3,
+    },
+    text: {
+      color: 'white',
+      idFont: 'Bold 92px Arial',
+      coordFont: 'Bold 80px Arial',
+      idY: 120,
+      coordY: 220,
+    },
+    offset: {
+      startY: 0.25,
+      endY: -0.25,
+    },
+    spriteScale: { x: 1.8, y: 0.6, z: 1 },
+  },
+  measurementPoint: {
+    radius: 0.2,
+    widthSegments: 16,
+    heightSegments: 16,
+    opacity: 0.8,
+  },
+  textScale: {
+    baseDistance: 20,
+    baseScale: 2,
+    minScale: 0.5,
+    maxScale: 5,
+    yRatio: {
+      default: 0.25,
+      withHorizontalVertical: 0.375,
+      endpointX: 0.9,
+      endpointY: 0.3,
+    },
+  },
+  lineRotation: {
+    minNormalLength: 0.001,
+    fallbackNormalY: 1,
+  },
+});
+
 /**
  * 距離計測コンポーネント
  * - 左Shift + 左ドラッグで管路またはCSG断面間の距離を計測
@@ -444,7 +535,7 @@ class DistanceMeasurement {
       // 交点が始点から一定距離内の場合のみ使用（遠くに飛ばないように）
       if (planeIntersect) {
         const distance = this.startPoint.distanceTo(planeIntersect);
-        if (distance < 1000) {  // 1000m以内のみ有効
+        if (distance < DISTANCE_MEASUREMENT_CONFIG.interaction.maxPreviewDistance) {
           currentPoint = planeIntersect;
         }
       }
@@ -565,7 +656,7 @@ class DistanceMeasurement {
   highlightPipe(pipe, color) {
     if (pipe && pipe.material) {
       pipe.material.emissive.setHex(color);
-      pipe.material.emissiveIntensity = 0.5;
+      pipe.material.emissiveIntensity = DISTANCE_MEASUREMENT_CONFIG.highlight.emissiveIntensity;
     }
   }
 
@@ -575,7 +666,7 @@ class DistanceMeasurement {
   clearHighlight(pipe) {
     if (pipe && pipe.material) {
       pipe.material.emissive.setHex(0x000000);
-      pipe.material.emissiveIntensity = 0;
+      pipe.material.emissiveIntensity = DISTANCE_MEASUREMENT_CONFIG.highlight.clearEmissiveIntensity;
     }
   }
 
@@ -589,13 +680,13 @@ class DistanceMeasurement {
     const midPoint = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
     // 幅広い平面ジオメトリを作成（1枚の板）
-    const width = 0.15;  // 線の幅
+    const width = DISTANCE_MEASUREMENT_CONFIG.previewLine.width;
     const geometry = new THREE.PlaneGeometry(length, width);
 
     const material = new THREE.MeshBasicMaterial({
-      color: 0xff0000,  // 赤色
+      color: DISTANCE_MEASUREMENT_CONFIG.previewLine.color,
       transparent: true,
-      opacity: 0.5,     // 透明度50%
+      opacity: DISTANCE_MEASUREMENT_CONFIG.previewLine.opacity,
       depthTest: false,
       side: THREE.DoubleSide  // 両面から見えるように
     });
@@ -641,15 +732,17 @@ class DistanceMeasurement {
     const midPoint = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
     // 幅広い平面ジオメトリを作成（1枚の板）
-    const width = 0.15;  // 線の幅
+    const width = DISTANCE_MEASUREMENT_CONFIG.measurementLine.width;
     const geometry = new THREE.PlaneGeometry(length, width);
 
     // 単色のマテリアルを作成
-    const colorValue = color === 'blue' ? 0x0000ff : 0xff0000;
+    const colorValue = color === 'blue'
+      ? DISTANCE_MEASUREMENT_CONFIG.measurementLine.closestColor
+      : DISTANCE_MEASUREMENT_CONFIG.measurementLine.specifiedColor;
     const material = new THREE.MeshBasicMaterial({
       color: colorValue,
       transparent: true,
-      opacity: 0.8,
+      opacity: DISTANCE_MEASUREMENT_CONFIG.measurementLine.opacity,
       depthTest: false,
       side: THREE.DoubleSide  // 両面から見えるように
     });
@@ -696,33 +789,35 @@ class DistanceMeasurement {
     
     // 水平・鉛直距離を表示する場合は、キャンバスを高くする
     const hasHorizontalVertical = horizontalDistance !== null && verticalDistance !== null;
-    canvas.width = 1024;
-    canvas.height = hasHorizontalVertical ? 384 : 256; // 水平・鉛直距離がある場合は高さを増やす
+    canvas.width = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.canvasWidth;
+    canvas.height = hasHorizontalVertical
+      ? DISTANCE_MEASUREMENT_CONFIG.distanceLabel.canvasHeight.withHorizontalVertical
+      : DISTANCE_MEASUREMENT_CONFIG.distanceLabel.canvasHeight.default;
 
     // 背景を透明にする
     context.clearRect(0, 0, canvas.width, canvas.height);
 
     // テキストに影をつけて見やすくする
-    context.shadowColor = 'rgba(0, 0, 0, 0.9)';
-    context.shadowBlur = 12;
-    context.shadowOffsetX = 3;
-    context.shadowOffsetY = 3;
+    context.shadowColor = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.shadow.color;
+    context.shadowBlur = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.shadow.blur;
+    context.shadowOffsetX = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.shadow.offsetX;
+    context.shadowOffsetY = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.shadow.offsetY;
 
     // テキスト
-    context.fillStyle = 'white';
-    context.font = 'Bold 120px Arial';
+    context.fillStyle = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.text.color;
+    context.font = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.text.mainFont;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     
     if (hasHorizontalVertical) {
       // 距離、水平距離、鉛直距離を3行で表示
-      const lineHeight = 128;
+      const lineHeight = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.text.lineHeight;
       const startY = canvas.height / 2 - lineHeight / 2;
       
       // 距離
       context.fillText(`${distance.toFixed(3)}m`, canvas.width / 2, startY);
       // 水平距離
-      context.font = 'Bold 100px Arial';
+      context.font = DISTANCE_MEASUREMENT_CONFIG.distanceLabel.text.subFont;
       context.fillText(`水平: ${horizontalDistance.toFixed(3)}m`, canvas.width / 2, startY + lineHeight);
       // 鉛直距離
       context.fillText(`鉛直: ${verticalDistance.toFixed(3)}m`, canvas.width / 2, startY + lineHeight * 2);
@@ -750,9 +845,17 @@ class DistanceMeasurement {
     // 初期スケール（カメラ距離に応じて動的に調整される）
     // 水平・鉛直距離を表示する場合は、Yスケールを大きくする
     if (hasHorizontalVertical) {
-      textSprite.scale.set(2, 0.75, 1); // 高さを増やす
+      textSprite.scale.set(
+        DISTANCE_MEASUREMENT_CONFIG.distanceLabel.spriteScale.x,
+        DISTANCE_MEASUREMENT_CONFIG.distanceLabel.spriteScale.y.withHorizontalVertical,
+        1
+      );
     } else {
-      textSprite.scale.set(2, 0.5, 1);
+      textSprite.scale.set(
+        DISTANCE_MEASUREMENT_CONFIG.distanceLabel.spriteScale.x,
+        DISTANCE_MEASUREMENT_CONFIG.distanceLabel.spriteScale.y.default,
+        1
+      );
     }
 
     // 線のタイプに応じて配列に追加し、表示状態を設定
@@ -779,25 +882,25 @@ class DistanceMeasurement {
   drawEndpointInfoText(position, pipeId, lineType = 'specified', endpointType = 'start') {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    canvas.width = 1400;
-    canvas.height = 320;
+    canvas.width = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.canvasWidth;
+    canvas.height = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.canvasHeight;
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    context.shadowColor = 'rgba(0, 0, 0, 0.9)';
-    context.shadowBlur = 10;
-    context.shadowOffsetX = 3;
-    context.shadowOffsetY = 3;
-    context.fillStyle = 'white';
+    context.shadowColor = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.shadow.color;
+    context.shadowBlur = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.shadow.blur;
+    context.shadowOffsetX = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.shadow.offsetX;
+    context.shadowOffsetY = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.shadow.offsetY;
+    context.fillStyle = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.text.color;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
 
     const idText = `(識別番号: ${pipeId ?? '-'})`;
     const coordText = `(${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`;
 
-    context.font = 'Bold 92px Arial';
-    context.fillText(idText, canvas.width / 2, 120);
-    context.font = 'Bold 80px Arial';
-    context.fillText(coordText, canvas.width / 2, 220);
+    context.font = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.text.idFont;
+    context.fillText(idText, canvas.width / 2, DISTANCE_MEASUREMENT_CONFIG.endpointLabel.text.idY);
+    context.font = DISTANCE_MEASUREMENT_CONFIG.endpointLabel.text.coordFont;
+    context.fillText(coordText, canvas.width / 2, DISTANCE_MEASUREMENT_CONFIG.endpointLabel.text.coordY);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
@@ -809,10 +912,16 @@ class DistanceMeasurement {
     const textSprite = new THREE.Sprite(spriteMaterial);
 
     // 始点/終点で少し縦方向オフセットをずらして重なりを緩和する
-    const yOffset = endpointType === 'start' ? 0.25 : -0.25;
+    const yOffset = endpointType === 'start'
+      ? DISTANCE_MEASUREMENT_CONFIG.endpointLabel.offset.startY
+      : DISTANCE_MEASUREMENT_CONFIG.endpointLabel.offset.endY;
     const textPosition = position.clone().add(new THREE.Vector3(0, yOffset, 0));
     textSprite.position.copy(textPosition);
-    textSprite.scale.set(1.8, 0.6, 1);
+    textSprite.scale.set(
+      DISTANCE_MEASUREMENT_CONFIG.endpointLabel.spriteScale.x,
+      DISTANCE_MEASUREMENT_CONFIG.endpointLabel.spriteScale.y,
+      DISTANCE_MEASUREMENT_CONFIG.endpointLabel.spriteScale.z
+    );
     textSprite.userData.isEndpointInfo = true;
 
     if (lineType === 'closest') {
@@ -832,12 +941,16 @@ class DistanceMeasurement {
    * 計測点を描画
    */
   drawMeasurementPoint(position, color) {
-    const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+    const geometry = new THREE.SphereGeometry(
+      DISTANCE_MEASUREMENT_CONFIG.measurementPoint.radius,
+      DISTANCE_MEASUREMENT_CONFIG.measurementPoint.widthSegments,
+      DISTANCE_MEASUREMENT_CONFIG.measurementPoint.heightSegments
+    );
     const material = new THREE.MeshBasicMaterial({
       color: color,
       depthTest: false,
       transparent: true,
-      opacity: 0.8
+      opacity: DISTANCE_MEASUREMENT_CONFIG.measurementPoint.opacity
     });
 
     const sphere = new THREE.Mesh(geometry, material);
@@ -1260,8 +1373,8 @@ class DistanceMeasurement {
     const normal = new THREE.Vector3().crossVectors(lineDir, cameraToLine).normalize();
 
     // もし外積がゼロベクトルに近い場合（線がカメラ方向と平行）、デフォルトの法線を使用
-    if (normal.length() < 0.001) {
-      normal.set(0, 1, 0);
+    if (normal.length() < DISTANCE_MEASUREMENT_CONFIG.lineRotation.minNormalLength) {
+      normal.set(0, DISTANCE_MEASUREMENT_CONFIG.lineRotation.fallbackNormalY, 0);
     }
 
     // Z軸を計算
@@ -1287,10 +1400,10 @@ class DistanceMeasurement {
    * テキストのスケールをカメラ距離に応じて調整
    */
   updateTextScale() {
-    const baseDistance = 20;
-    const baseScale = 2;
-    const minScale = 0.5;
-    const maxScale = 5;
+    const baseDistance = DISTANCE_MEASUREMENT_CONFIG.textScale.baseDistance;
+    const baseScale = DISTANCE_MEASUREMENT_CONFIG.textScale.baseScale;
+    const minScale = DISTANCE_MEASUREMENT_CONFIG.textScale.minScale;
+    const maxScale = DISTANCE_MEASUREMENT_CONFIG.textScale.maxScale;
 
     // すべての指定距離のテキストスケール更新
     for (let i = 0; i < this.measurementTexts.length; i++) {
@@ -1300,7 +1413,9 @@ class DistanceMeasurement {
         const distance = this.camera.position.distanceTo(position);
         const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
         // 水平・鉛直距離を表示する場合は、Yスケールを大きくする
-        const yScale = text.userData.hasHorizontalVertical ? scaleFactor * 0.375 : scaleFactor * 0.25;
+        const yScale = text.userData.hasHorizontalVertical
+          ? scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.withHorizontalVertical
+          : scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.default;
         text.scale.set(scaleFactor, yScale, 1);
       }
     }
@@ -1313,7 +1428,9 @@ class DistanceMeasurement {
         const distance = this.camera.position.distanceTo(position);
         const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
         // 水平・鉛直距離を表示する場合は、Yスケールを大きくする
-        const yScale = text.userData.hasHorizontalVertical ? scaleFactor * 0.375 : scaleFactor * 0.25;
+        const yScale = text.userData.hasHorizontalVertical
+          ? scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.withHorizontalVertical
+          : scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.default;
         text.scale.set(scaleFactor, yScale, 1);
       }
     }
@@ -1325,7 +1442,11 @@ class DistanceMeasurement {
       if (text && position) {
         const distance = this.camera.position.distanceTo(position);
         const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
-        text.scale.set(scaleFactor * 0.9, scaleFactor * 0.3, 1);
+        text.scale.set(
+          scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.endpointX,
+          scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.endpointY,
+          1
+        );
       }
     }
 
@@ -1336,7 +1457,11 @@ class DistanceMeasurement {
       if (text && position) {
         const distance = this.camera.position.distanceTo(position);
         const scaleFactor = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
-        text.scale.set(scaleFactor * 0.9, scaleFactor * 0.3, 1);
+        text.scale.set(
+          scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.endpointX,
+          scaleFactor * DISTANCE_MEASUREMENT_CONFIG.textScale.yRatio.endpointY,
+          1
+        );
       }
     }
   }

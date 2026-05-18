@@ -7,6 +7,7 @@ import SkyComponent from './SkyComponent';
 import PipelineInfoDisplay from './PipelineInfoDisplay';
 import { DistanceMeasurement, DistanceMeasurementDisplay } from './DistanceMeasurement';
 import PolylineMeasurement from './PolylineMeasurement';
+import { ThreePointMeasurement, ThreePointMeasurementDisplay } from './ThreePointMeasurement';
 import CrossSectionPlane from './CrossSectionPlane';
 import JGWImageLoader from './JGWImageLoader';
 import PotreePointCloudViewer from './PotreePointCloudViewer';
@@ -108,6 +109,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const distanceMeasurementRef = useRef(null);
   // 中クリック折れ線計測用のref
   const polylineMeasurementRef = useRef(null);
+  // 3点計測用のref
+  const threePointMeasurementRef = useRef(null);
   // カメラ位置とOrbitControls.targetの相対距離
   const targetOffsetRef = useRef(new THREE.Vector3(0, 0, -10));
 
@@ -483,6 +486,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     if (polylineMeasurementRef.current && typeof polylineMeasurementRef.current.updateCamera === 'function') {
       polylineMeasurementRef.current.updateCamera(nextCamera);
     }
+    if (threePointMeasurementRef.current && typeof threePointMeasurementRef.current.updateCamera === 'function') {
+      threePointMeasurementRef.current.updateCamera(nextCamera);
+    }
 
     if (crossSectionRef.current && typeof crossSectionRef.current.setCamera === 'function') {
       crossSectionRef.current.setCamera(nextCamera);
@@ -523,9 +529,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showEquipmentBookmarksPanel, setShowEquipmentBookmarksPanel] = useState(false);
   const [showSubViews, setShowSubViews] = useState(false);
   const [subViewFollowEnabled, setSubViewFollowEnabled] = useState(true);
+  const [isThreePointMeasurementMode, setIsThreePointMeasurementMode] = useState(false);
   // animateループ内の古いクロージャを避けるため、表示状態はrefにも同期して参照する
   const showSubViewsRef = useRef(false);
   const subViewFollowEnabledRef = useRef(true);
+  const isThreePointMeasurementModeRef = useRef(false);
   const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
   const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
   // サブビュー描画はSubViewPanelのimperative APIへ委譲
@@ -567,6 +575,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     setSubViewFollowEnabled(event.target.checked);
   };
 
+  const handleStartThreePointMeasurement = () => {
+    setIsThreePointMeasurementMode(true);
+  };
+
+  const handleStopThreePointMeasurement = () => {
+    setIsThreePointMeasurementMode(false);
+  };
+
   const isSubViewInteraction = (event) => {
     if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return false;
     const rect = mountRef.current.getBoundingClientRect();
@@ -586,6 +602,25 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   }, [subViewFollowEnabled]);
 
   useEffect(() => {
+    isThreePointMeasurementModeRef.current = isThreePointMeasurementMode;
+    if (!isThreePointMeasurementMode) {
+      threePointMeasurementRef.current?.setActive(false);
+      return;
+    }
+
+    // 3点計測モードでは通常選択との競合を避けるため、選択状態を解除する
+    setSelectedObject(null);
+    selectedMeshRef.current = null;
+    if (outlineHelperRef.current && sceneRef.current) {
+      sceneRef.current.remove(outlineHelperRef.current);
+      outlineHelperRef.current.geometry?.dispose();
+      outlineHelperRef.current.material?.dispose();
+      outlineHelperRef.current = null;
+    }
+    threePointMeasurementRef.current?.setActive(true);
+  }, [isThreePointMeasurementMode]);
+
+  useEffect(() => {
     if (enableCrossSectionMode) {
       setShowSubViews(false);
     }
@@ -593,6 +628,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
+  // 3点計測結果のstate
+  const [threePointMeasurementResult, setThreePointMeasurementResult] = useState(null);
 
   // showPipes が変更されたときに管路オブジェクトの表示/非表示を切り替え
   useEffect(() => {
@@ -709,6 +746,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     mouseMovedRef.current = true;
+    if (isThreePointMeasurementModeRef.current) {
+      return;
+    }
     // 左shiftキーが押されている場合は距離計測を優先
     if (event.shiftKey) {
       return;
@@ -793,6 +833,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     // 左shiftキーが押されている場合は距離計測を優先
     if (event.shiftKey) {
+      return;
+    }
+    if (isThreePointMeasurementModeRef.current) {
       return;
     }
 
@@ -905,6 +948,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       }
       // 左shiftキーが押されている場合は距離計測を優先
       if (event.shiftKey) {
+        return;
+      }
+      if (isThreePointMeasurementModeRef.current) {
         return;
       }
 
@@ -1210,6 +1256,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return;
     }
 
+    if (isThreePointMeasurementModeRef.current) {
+      return;
+    }
 
     // 左shiftキーが押されている場合は距離計測を優先
     if (event.shiftKey) {
@@ -2174,6 +2223,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     polylineMeasurement.enable(mountRef.current);
     polylineMeasurementRef.current = polylineMeasurement;
 
+    // 3点計測の初期化
+    const threePointMeasurement = new ThreePointMeasurement(
+      scene,
+      cameraRef.current,
+      renderer,
+      raycasterRef.current,
+      () => floorRef.current,
+      () => terrainViewerRef.current?.terrainMeshRef,
+      controls
+    );
+    threePointMeasurement.setResultUpdateCallback(setThreePointMeasurementResult);
+    threePointMeasurement.enable(mountRef.current);
+    threePointMeasurement.setActive(isThreePointMeasurementModeRef.current);
+    threePointMeasurementRef.current = threePointMeasurement;
+
     // イベントリスナー
     mountRef.current.addEventListener('mousemove', handleMouseMove);
     mountRef.current.addEventListener('mousedown', handleMouseDown);
@@ -2420,8 +2484,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
       // ESC: 計測結果と管路情報表示をクリア
       if (keysPressed.current['escape']) {
-        // 中クリック折れ線計測がある場合は優先してクリア
-        if (polylineMeasurementRef.current && polylineMeasurementRef.current.hasMeasurements()) {
+        // 3点計測がある場合は最優先でクリア
+        if (threePointMeasurementRef.current && threePointMeasurementRef.current.hasMeasurements()) {
+          threePointMeasurementRef.current.clear();
+        } else if (polylineMeasurementRef.current && polylineMeasurementRef.current.hasMeasurements()) {
+          // 中クリック折れ線計測がある場合は優先してクリア
           polylineMeasurementRef.current.clear();
         } else if (distanceMeasurementRef.current && measurementResult) {
           // 離隔計測結果がある場合は計測結果のみクリア
@@ -2726,6 +2793,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       if (polylineMeasurementRef.current) {
         polylineMeasurementRef.current.update();
       }
+      if (threePointMeasurementRef.current) {
+        threePointMeasurementRef.current.update();
+      }
 
       // 断面の深さラベルをカメラからの距離に応じて更新
       if (crossSectionRef.current) {
@@ -2798,6 +2868,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           polylineMeasurementRef.current.dispose(currentMount);
         } catch (error) {
           console.error('折れ線計測のクリーンアップでエラー:', error);
+        }
+      }
+      if (threePointMeasurementRef.current && currentMount) {
+        try {
+          threePointMeasurementRef.current.dispose(currentMount);
+        } catch (error) {
+          console.error('3点計測のクリーンアップでエラー:', error);
         }
       }
 
@@ -3812,6 +3889,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           <div className="section-title">◆離隔計測</div>
           左Shift+左ドラッグ: 管路間の最近接距離を計測します<br />
           中クリック:地表面で折れ線の長さを計測します<br />
+          3点計測ボタン: 地表面の3点計測モードを開始します<br />
           ESCキー: 離隔をクリア<br />
           <div className="section-title">◆表示切り替え</div>
           1: ガイド 2: 背景 3: グリッド線 5:離隔 6: 折れ線 7: 管路 8: 路面 9: 地表面<br />
@@ -3820,6 +3898,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           {/* 距離計測結果を表示 */}
           {measurementResult && (
             <DistanceMeasurementDisplay measurementResult={measurementResult} />
+          )}
+          {threePointMeasurementResult && (
+            <ThreePointMeasurementDisplay measurementResult={threePointMeasurementResult} />
           )}
           {/* 選択された管路情報を表示 */}
           {selectedObject && (
@@ -3881,6 +3962,22 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             onClick={handleToggleSubViews}
           >
             {showSubViews ? 'サブビューを閉じる' : 'サブビュー'}
+          </button>
+        )}
+        <button
+          type="button"
+          className={`scene-top-right-button ${isThreePointMeasurementMode ? 'active' : ''}`}
+          onClick={handleStartThreePointMeasurement}
+        >
+          3点計測
+        </button>
+        {isThreePointMeasurementMode && (
+          <button
+            type="button"
+            className="scene-top-right-button"
+            onClick={handleStopThreePointMeasurement}
+          >
+            3点計測終了
           </button>
         )}
         {!enableCrossSectionMode && showSubViews && (
