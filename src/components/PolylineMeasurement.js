@@ -31,6 +31,27 @@ const POLYLINE_MEASUREMENT_CONFIG = {
       yRatio: 0.34,
     },
   },
+  pointLabel: {
+    canvasWidth: 1024,
+    canvasHeight: 256,
+    shadowColor: 'rgba(0, 0, 0, 0.9)',
+    shadowBlur: 10,
+    shadowOffsetX: 2,
+    shadowOffsetY: 2,
+    color: '#ffd166',
+    font: 'Bold 84px Arial',
+    baseScaleX: 2.0,
+    baseScaleY: 0.45,
+    yOffset: 0.2,
+    renderOrder: 9502,
+    scale: {
+      baseDistance: 20,
+      baseScale: 2.0,
+      minScale: 0.7,
+      maxScale: 5.0,
+      yRatio: 0.22,
+    },
+  },
 };
 
 /**
@@ -50,6 +71,7 @@ class PolylineMeasurement {
     this.domElement = null;
     this.points = [];
     this.segments = []; // { line, sprite, texture, sectionIndex, sectionDistance, cumulativeDistance, horizontalDistance, verticalDistance }
+    this.pointLabels = []; // { sprite, texture, position }
     this.labelMode = 'section'; // 'section' | 'cumulative'
 
     this.handleMouseDown = this.handleMouseDown.bind(this);
@@ -124,11 +146,57 @@ class PolylineMeasurement {
   addPoint(point) {
     const prevPoint = this.points[this.points.length - 1];
     this.points.push(point.clone());
+    this.createPointCoordinateLabel(point);
 
     if (prevPoint) {
       const sectionIndex = this.points.length - 1;
       this.createSegment(prevPoint, point, sectionIndex);
     }
+  }
+
+  createPointCoordinateLabel(point) {
+    const { pointLabel } = POLYLINE_MEASUREMENT_CONFIG;
+    const canvas = document.createElement('canvas');
+    canvas.width = pointLabel.canvasWidth;
+    canvas.height = pointLabel.canvasHeight;
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.shadowColor = pointLabel.shadowColor;
+    context.shadowBlur = pointLabel.shadowBlur;
+    context.shadowOffsetX = pointLabel.shadowOffsetX;
+    context.shadowOffsetY = pointLabel.shadowOffsetY;
+    context.fillStyle = pointLabel.color;
+    context.font = pointLabel.font;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(
+      `(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`,
+      canvas.width / 2,
+      canvas.height / 2
+    );
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(pointLabel.baseScaleX, pointLabel.baseScaleY, 1);
+    sprite.position.copy(point.clone().add(new THREE.Vector3(0, pointLabel.yOffset, 0)));
+    sprite.renderOrder = pointLabel.renderOrder;
+    this.scene.add(sprite);
+
+    this.pointLabels.push({
+      sprite,
+      texture,
+      position: sprite.position.clone()
+    });
   }
 
   createSegment(start, end, sectionIndex) {
@@ -280,7 +348,7 @@ class PolylineMeasurement {
   }
 
   updateLabelScale() {
-    if (!this.camera || this.segments.length === 0) return;
+    if (!this.camera) return;
 
     const { baseDistance, baseScale, minScale, maxScale, yRatio } =
       POLYLINE_MEASUREMENT_CONFIG.label.scale;
@@ -290,6 +358,17 @@ class PolylineMeasurement {
       const distance = this.camera.position.distanceTo(sprite.position);
       const scaleX = Math.max(minScale, Math.min(maxScale, (distance / baseDistance) * baseScale));
       sprite.scale.set(scaleX, scaleX * yRatio, 1);
+    });
+
+    const pointScale = POLYLINE_MEASUREMENT_CONFIG.pointLabel.scale;
+    this.pointLabels.forEach(({ sprite, position }) => {
+      if (!sprite || !position) return;
+      const distance = this.camera.position.distanceTo(position);
+      const scaleX = Math.max(
+        pointScale.minScale,
+        Math.min(pointScale.maxScale, (distance / pointScale.baseDistance) * pointScale.baseScale)
+      );
+      sprite.scale.set(scaleX, scaleX * pointScale.yRatio, 1);
     });
   }
 
@@ -308,6 +387,15 @@ class PolylineMeasurement {
       texture?.dispose();
     });
     this.segments = [];
+
+    this.pointLabels.forEach(({ sprite, texture }) => {
+      if (sprite) {
+        this.scene.remove(sprite);
+        sprite.material?.dispose();
+      }
+      texture?.dispose();
+    });
+    this.pointLabels = [];
   }
 
   dispose(domElement = this.domElement) {
