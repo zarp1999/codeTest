@@ -92,6 +92,10 @@ const THREE_POINT_MEASUREMENT_CONFIG = Object.freeze({
   transformControl: {
     size: 0.9,
   },
+  terrainHeightSnap: {
+    raycastMargin: 1000,
+    defaultRaycastHeight: 10000,
+  },
   calculation: {
     minBaseLengthSquared: 1e-8,
   },
@@ -121,8 +125,8 @@ class ThreePointMeasurement {
 
     this.domElement = null;
     this.isActive = false;
-    this.isVerticalMoveAllowed = false;
-    this.canMoveVertical = false;
+    this.isTerrainHeightSnapAllowed = false;
+    this.canSnapToTerrainHeight = false;
     this.onResultUpdate = null;
     this.measurementResult = null;
 
@@ -184,9 +188,9 @@ class ThreePointMeasurement {
     }
   }
 
-  setVerticalMoveAllowed(isAllowed) {
-    this.isVerticalMoveAllowed = Boolean(isAllowed);
-    this.syncVerticalMoveState();
+  setTerrainHeightSnapAllowed(isAllowed) {
+    this.isTerrainHeightSnapAllowed = Boolean(isAllowed);
+    this.syncTerrainHeightSnapState();
   }
 
   hasMeasurements() {
@@ -194,22 +198,23 @@ class ThreePointMeasurement {
   }
 
   update() {
-    this.syncVerticalMoveState();
+    this.syncTerrainHeightSnapState();
     this.updateLabelScale();
   }
 
-  syncVerticalMoveState() {
+  syncTerrainHeightSnapState() {
     const terrainMesh = this.getTerrainMesh?.();
-    const nextCanMoveVertical = this.isVerticalMoveAllowed && Boolean(terrainMesh?.visible);
+    const nextCanSnapToTerrainHeight = this.isTerrainHeightSnapAllowed && Boolean(terrainMesh?.visible);
 
-    if (this.canMoveVertical === nextCanMoveVertical) return;
-    this.canMoveVertical = nextCanMoveVertical;
+    if (this.canSnapToTerrainHeight === nextCanSnapToTerrainHeight) return;
+    this.canSnapToTerrainHeight = nextCanSnapToTerrainHeight;
 
     if (this.transformControl) {
-      this.transformControl.showY = this.canMoveVertical;
+      // elevationでもYハンドルは出さず、X/Z移動後に地表高へ自動追従させる。
+      this.transformControl.showY = false;
     }
 
-    // Y移動を無効化する時は、現在位置を新しい固定高さとして扱う
+    // 地表高追従を無効化する時は、現在位置を新しい固定高さとして扱う。
     THREE_POINT_MEASUREMENT_CONFIG.pointOrder.forEach((pointKey) => {
       const mesh = this.pointMeshes[pointKey];
       if (mesh) {
@@ -224,7 +229,7 @@ class ThreePointMeasurement {
     this.transformControl.size = THREE_POINT_MEASUREMENT_CONFIG.transformControl.size;
     this.transformControl.setMode('translate');
     this.transformControl.showX = true;
-    this.transformControl.showY = this.canMoveVertical;
+    this.transformControl.showY = false;
     this.transformControl.showZ = true;
     this.transformControl.visible = false;
     this.transformControl.enabled = false;
@@ -243,12 +248,18 @@ class ThreePointMeasurement {
     const target = this.transformControl?.object;
     if (!target) return;
 
-    // 通常画面では東西・南北のみ。elevation画面かつ地形が有効な時だけY移動を許可する。
+    // 通常画面ではY固定。elevation画面かつ地形が有効な時は、X/Z移動に合わせてYを地表高へ更新する。
     const lockedY = target.userData?.lockedY;
-    if (!this.canMoveVertical && Number.isFinite(lockedY)) {
+    if (this.canSnapToTerrainHeight) {
+      const terrainY = this.getTerrainHeightAtXZ(target.position.x, target.position.z);
+      if (Number.isFinite(terrainY)) {
+        target.position.y = terrainY;
+        target.userData.lockedY = terrainY;
+      } else if (Number.isFinite(lockedY)) {
+        target.position.y = lockedY;
+      }
+    } else if (Number.isFinite(lockedY)) {
       target.position.y = lockedY;
-    } else if (this.canMoveVertical) {
-      target.userData.lockedY = target.position.y;
     }
 
     const pointKey = target.userData?.pointKey;
@@ -333,6 +344,29 @@ class ThreePointMeasurement {
     const intersects = this.raycaster.intersectObjects(targets, false);
     if (!intersects.length) return null;
     return intersects[0].point.clone();
+  }
+
+  getTerrainHeightAtXZ(x, z) {
+    const terrainMesh = this.getTerrainMesh?.();
+    if (!terrainMesh?.visible) return null;
+
+    terrainMesh.updateWorldMatrix?.(true, false);
+    const box = new THREE.Box3().setFromObject(terrainMesh);
+    const { raycastMargin, defaultRaycastHeight } = THREE_POINT_MEASUREMENT_CONFIG.terrainHeightSnap;
+    const originY = Number.isFinite(box.max.y) ? box.max.y + raycastMargin : defaultRaycastHeight;
+    const far = Number.isFinite(box.max.y) && Number.isFinite(box.min.y)
+      ? Math.max(raycastMargin * 2, box.max.y - box.min.y + raycastMargin * 2)
+      : defaultRaycastHeight * 2;
+
+    this.raycaster.set(
+      new THREE.Vector3(x, originY, z),
+      new THREE.Vector3(0, -1, 0)
+    );
+    this.raycaster.far = far;
+    const intersects = this.raycaster.intersectObject(terrainMesh, false);
+    this.raycaster.far = Infinity;
+
+    return intersects.length > 0 ? intersects[0].point.y : null;
   }
 
   toNdc(event) {
