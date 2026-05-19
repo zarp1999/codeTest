@@ -51,6 +51,24 @@ const THREE_POINT_MEASUREMENT_CONFIG = Object.freeze({
       yRatio: 0.26,
     },
   },
+  closestPointLabel: {
+    canvasWidth: 1200,
+    canvasHeight: 300,
+    offsetY: 0.42,
+    font: 'Bold 74px Arial',
+    color: '#ffb3d9',
+    shadowColor: 'rgba(0, 0, 0, 0.9)',
+    shadowBlur: 10,
+    shadowOffsetX: 2,
+    shadowOffsetY: 2,
+    scale: {
+      baseDistance: 20,
+      baseScale: 2.0,
+      minScale: 0.7,
+      maxScale: 5.0,
+      yRatio: 0.26,
+    },
+  },
   closestDistanceLabel: {
     canvasWidth: 1200,
     canvasHeight: 420,
@@ -77,6 +95,8 @@ const THREE_POINT_MEASUREMENT_CONFIG = Object.freeze({
   calculation: {
     minBaseLengthSquared: 1e-8,
   },
+  // pointOrder は「ユーザーがクリックで定義する入力点のみ」を並べる。
+  // 最近接点Qは派生点（計算結果）なのでここには含めない。
   pointOrder: ['start', 'end', 'measure'],
   pointTextPrefix: {
     start: '始点(A)',
@@ -101,6 +121,8 @@ class ThreePointMeasurement {
 
     this.domElement = null;
     this.isActive = false;
+    this.isVerticalMoveAllowed = false;
+    this.canMoveVertical = false;
     this.onResultUpdate = null;
     this.measurementResult = null;
 
@@ -116,6 +138,7 @@ class ThreePointMeasurement {
     this.distanceLineMesh = null;
     this.extensionLineMesh = null;
     this.closestPointMesh = null;
+    this.closestPointLabel = { sprite: null, texture: null, position: null };
     this.closestDistanceLabel = { sprite: null, texture: null, position: null };
 
     this.transformControl = null;
@@ -161,12 +184,38 @@ class ThreePointMeasurement {
     }
   }
 
+  setVerticalMoveAllowed(isAllowed) {
+    this.isVerticalMoveAllowed = Boolean(isAllowed);
+    this.syncVerticalMoveState();
+  }
+
   hasMeasurements() {
     return Boolean(this.pointValues.start || this.pointValues.end || this.pointValues.measure);
   }
 
   update() {
+    this.syncVerticalMoveState();
     this.updateLabelScale();
+  }
+
+  syncVerticalMoveState() {
+    const terrainMesh = this.getTerrainMesh?.();
+    const nextCanMoveVertical = this.isVerticalMoveAllowed && Boolean(terrainMesh?.visible);
+
+    if (this.canMoveVertical === nextCanMoveVertical) return;
+    this.canMoveVertical = nextCanMoveVertical;
+
+    if (this.transformControl) {
+      this.transformControl.showY = this.canMoveVertical;
+    }
+
+    // Y移動を無効化する時は、現在位置を新しい固定高さとして扱う
+    THREE_POINT_MEASUREMENT_CONFIG.pointOrder.forEach((pointKey) => {
+      const mesh = this.pointMeshes[pointKey];
+      if (mesh) {
+        mesh.userData.lockedY = mesh.position.y;
+      }
+    });
   }
 
   initializeTransformControl() {
@@ -175,7 +224,7 @@ class ThreePointMeasurement {
     this.transformControl.size = THREE_POINT_MEASUREMENT_CONFIG.transformControl.size;
     this.transformControl.setMode('translate');
     this.transformControl.showX = true;
-    this.transformControl.showY = false;
+    this.transformControl.showY = this.canMoveVertical;
     this.transformControl.showZ = true;
     this.transformControl.visible = false;
     this.transformControl.enabled = false;
@@ -194,10 +243,12 @@ class ThreePointMeasurement {
     const target = this.transformControl?.object;
     if (!target) return;
 
-    // 東西・南北のみ移動させるため、Yは生成時の値に固定する
+    // 通常画面では東西・南北のみ。elevation画面かつ地形が有効な時だけY移動を許可する。
     const lockedY = target.userData?.lockedY;
-    if (Number.isFinite(lockedY)) {
+    if (!this.canMoveVertical && Number.isFinite(lockedY)) {
       target.position.y = lockedY;
+    } else if (this.canMoveVertical) {
+      target.userData.lockedY = target.position.y;
     }
 
     const pointKey = target.userData?.pointKey;
@@ -240,6 +291,7 @@ class ThreePointMeasurement {
   }
 
   getDefinedPointCount() {
+    // 入力点の定義進行を判定する用途（A/B/Pの3点のみ）
     return THREE_POINT_MEASUREMENT_CONFIG.pointOrder.filter((key) => Boolean(this.pointValues[key])).length;
   }
 
@@ -407,7 +459,10 @@ class ThreePointMeasurement {
       measure,
       THREE_POINT_MEASUREMENT_CONFIG.line.colors.distance
     );
+    // 最近接点Qは入力点ではなく、毎回再計算して描画し直す派生点。
     this.updateClosestPointMesh(projectionPoint);
+    this.updateClosestPointCoordinateLabel(projectionPoint);
+    // 最近接線(Q-P)の中点に、最近接/水平/鉛直距離を表示する。
     this.updateClosestDistanceLabel(projectionPoint, measure, distance, horizontalDistance, verticalDistance);
 
     if (isExtended) {
@@ -465,6 +520,7 @@ class ThreePointMeasurement {
   }
 
   updateClosestPointMesh(point) {
+    // 派生点Qは都度更新されるため、毎回作り直して古いメッシュを破棄する。
     if (this.closestPointMesh) {
       this.scene.remove(this.closestPointMesh);
       this.closestPointMesh.geometry?.dispose();
@@ -489,7 +545,57 @@ class ThreePointMeasurement {
     this.closestPointMesh = sphere;
   }
 
+  updateClosestPointCoordinateLabel(point) {
+    // 最近接点Qの座標ラベル。Qの位置に追従して毎回更新する。
+    const config = THREE_POINT_MEASUREMENT_CONFIG.closestPointLabel;
+    const canvas = document.createElement('canvas');
+    canvas.width = config.canvasWidth;
+    canvas.height = config.canvasHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.shadowColor = config.shadowColor;
+    context.shadowBlur = config.shadowBlur;
+    context.shadowOffsetX = config.shadowOffsetX;
+    context.shadowOffsetY = config.shadowOffsetY;
+    context.fillStyle = config.color;
+    context.font = config.font;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(
+      `最近接点(Q): (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`,
+      canvas.width / 2,
+      canvas.height / 2
+    );
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    const position = point.clone().add(new THREE.Vector3(0, config.offsetY, 0));
+    sprite.position.copy(position);
+    this.scene.add(sprite);
+
+    if (this.closestPointLabel.sprite) {
+      this.scene.remove(this.closestPointLabel.sprite);
+      this.closestPointLabel.sprite.material?.dispose();
+    }
+    this.closestPointLabel.texture?.dispose();
+    this.closestPointLabel = {
+      sprite,
+      texture,
+      position,
+    };
+  }
+
   updateClosestDistanceLabel(startPoint, endPoint, distance, horizontalDistance, verticalDistance) {
+    // 距離ラベルは最近接線(Q-P)の中点へ配置し、線と値の対応を視覚的に明確化する。
     const config = THREE_POINT_MEASUREMENT_CONFIG.closestDistanceLabel;
     const canvas = document.createElement('canvas');
     canvas.width = config.canvasWidth;
@@ -580,6 +686,20 @@ class ThreePointMeasurement {
       );
       closestLabel.sprite.scale.set(scaleX, scaleX * closestDistanceLabelConfig.yRatio, 1);
     }
+
+    const closestPointLabelConfig = THREE_POINT_MEASUREMENT_CONFIG.closestPointLabel.scale;
+    const closestPointLabel = this.closestPointLabel;
+    if (closestPointLabel?.sprite && closestPointLabel?.position) {
+      const distance = this.camera.position.distanceTo(closestPointLabel.position);
+      const scaleX = Math.max(
+        closestPointLabelConfig.minScale,
+        Math.min(
+          closestPointLabelConfig.maxScale,
+          (distance / closestPointLabelConfig.baseDistance) * closestPointLabelConfig.baseScale
+        )
+      );
+      closestPointLabel.sprite.scale.set(scaleX, scaleX * closestPointLabelConfig.yRatio, 1);
+    }
   }
 
   clear() {
@@ -616,6 +736,12 @@ class ThreePointMeasurement {
     }
     this.closestDistanceLabel.texture?.dispose();
     this.closestDistanceLabel = { sprite: null, texture: null, position: null };
+    if (this.closestPointLabel.sprite) {
+      this.scene.remove(this.closestPointLabel.sprite);
+      this.closestPointLabel.sprite.material?.dispose();
+    }
+    this.closestPointLabel.texture?.dispose();
+    this.closestPointLabel = { sprite: null, texture: null, position: null };
 
     if (this.transformControl) {
       this.transformControl.detach();

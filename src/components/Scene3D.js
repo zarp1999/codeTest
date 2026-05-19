@@ -626,6 +626,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     }
   }, [enableCrossSectionMode]);
 
+  useEffect(() => {
+    if (!threePointMeasurementRef.current) return;
+    // elevation画面ではY編集を仕様上許可し、実際の有効/無効は地形メッシュの有無で3点計測側が判断する
+    threePointMeasurementRef.current.setVerticalMoveAllowed(mode === 'elevation');
+  }, [mode, terrainVisible]);
+
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
   // 3点計測結果のstate
@@ -2235,6 +2241,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     );
     threePointMeasurement.setResultUpdateCallback(setThreePointMeasurementResult);
     threePointMeasurement.enable(mountRef.current);
+    threePointMeasurement.setVerticalMoveAllowed(mode === 'elevation');
     threePointMeasurement.setActive(isThreePointMeasurementModeRef.current);
     threePointMeasurementRef.current = threePointMeasurement;
 
