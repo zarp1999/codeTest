@@ -782,9 +782,19 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return;
     }
 
+    const mountRect = mountRef.current?.getBoundingClientRect();
+
     setPipeHoverTooltip({
       summary,
       position: { x: event.clientX, y: event.clientY },
+      bounds: mountRect
+        ? {
+            left: mountRect.left,
+            top: mountRect.top,
+            right: mountRect.right,
+            bottom: mountRect.bottom,
+          }
+        : null,
     });
   };
 
@@ -3967,6 +3977,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       <PipelineHoverTooltip
         summary={pipeHoverTooltip?.summary}
         position={pipeHoverTooltip?.position}
+        bounds={pipeHoverTooltip?.bounds}
       />
 
       {/* 左上の管路情報 */}

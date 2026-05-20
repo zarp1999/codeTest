@@ -1,6 +1,7 @@
+/* fixed: left/top はビューポート基準（Scene3D の clientX/clientY と同じ座標系） */
 .pipeline-hover-tooltip {
   position: fixed;
-  z-index: 1000;
+  z-index: 16;
   min-width: 200px;
   max-width: 320px;
   padding: 8px 10px;
