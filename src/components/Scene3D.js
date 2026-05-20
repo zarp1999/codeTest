@@ -5,6 +5,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useAppConfig } from '../contexts/AppConfigContext';
 import SkyComponent from './SkyComponent';
 import PipelineInfoDisplay from './PipelineInfoDisplay';
+import PipelineHoverTooltip from './PipelineHoverTooltip';
+import { buildPipelineHoverSummary } from './pipelineInfoUtils';
 import { DistanceMeasurement, DistanceMeasurementDisplay } from './DistanceMeasurement';
 import PolylineMeasurement from './PolylineMeasurement';
 import { ThreePointMeasurement, ThreePointMeasurementDisplay } from './ThreePointMeasurement';
@@ -518,6 +520,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   // 選択されたオブジェクトのstate
   const [selectedObject, setSelectedObject] = useState(null);
+  const [pipeHoverTooltip, setPipeHoverTooltip] = useState(null);
   const [showGuides, setShowGuides] = useState(true);
   const [showAxisHud, setShowAxisHud] = useState(true);
   const [showPipes, setShowPipes] = useState(true);
@@ -734,6 +737,63 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     syncCamerasFromActive(camera);
   };
 
+  const clearPipeHoverTooltip = () => {
+    setPipeHoverTooltip(null);
+  };
+
+  const syncPipeHoverTooltip = (event) => {
+    const shouldHide =
+      !showPipes ||
+      isThreePointMeasurementModeRef.current ||
+      event.shiftKey ||
+      sectionIsDraggingRef.current ||
+      isDragging.current ||
+      pendingDragRef.current;
+
+    if (
+      shouldHide ||
+      !cameraRef.current ||
+      event.target !== rendererRef.current?.domElement
+    ) {
+      clearPipeHoverTooltip();
+      return;
+    }
+
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    const intersects = raycasterRef.current.intersectObjects(
+      Object.values(objectsRef.current),
+      false
+    );
+    const visibleIntersects = intersects.filter((intersect) => intersect.object.visible);
+    const hoveredMesh = visibleIntersects[0]?.object;
+    const objectData = hoveredMesh?.userData?.objectData;
+
+    if (!hoveredMesh || !objectData || !isPipeObject(objectData)) {
+      clearPipeHoverTooltip();
+      return;
+    }
+
+    const summary = buildPipelineHoverSummary(objectData, {
+      selectedMesh: hoveredMesh,
+      shapeTypes,
+    });
+    if (!summary) {
+      clearPipeHoverTooltip();
+      return;
+    }
+
+    setPipeHoverTooltip({
+      summary,
+      position: { x: event.clientX, y: event.clientY },
+    });
+  };
+
+  useEffect(() => {
+    if (!showPipes) {
+      clearPipeHoverTooltip();
+    }
+  }, [showPipes]);
+
   // マウス移動ハンドラー
   const handleMouseMove = (event) => {
     const rect = mountRef.current.getBoundingClientRect();
@@ -746,6 +806,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       });
       if (handled) {
         mouseMovedRef.current = false;
+        clearPipeHoverTooltip();
         return;
       }
     }
@@ -753,10 +814,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     mouseMovedRef.current = true;
     if (isThreePointMeasurementModeRef.current) {
+      clearPipeHoverTooltip();
       return;
     }
     // 左shiftキーが押されている場合は距離計測を優先
     if (event.shiftKey) {
+      clearPipeHoverTooltip();
       return;
     }
 
@@ -768,6 +831,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         sectionIsDraggingRef.current = true;
         sectionDragPendingRef.current = false;
       } else {
+        syncPipeHoverTooltip(event);
         return;
       }
     }
@@ -791,6 +855,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           drawSectionDragPreviewLine(sectionDragStartPointRef.current, sectionDragEndPointRef.current);
         }
       }
+      clearPipeHoverTooltip();
       return;
     }
 
@@ -807,6 +872,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         pendingDragRef.current = false;
       } else {
         // しきい値未満は「クリック」とみなし、移動も情報更新もしない
+        syncPipeHoverTooltip(event);
         return;
       }
     }
@@ -829,7 +895,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         // 管路情報表示を更新
         updatePipelineInfoDisplay();
       }
+      clearPipeHoverTooltip();
+      return;
     }
+
+    syncPipeHoverTooltip(event);
+  };
+
+  const handleMouseLeave = () => {
+    clearPipeHoverTooltip();
   };
 
   // マウスダウンハンドラー
@@ -2247,6 +2321,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     // イベントリスナー
     mountRef.current.addEventListener('mousemove', handleMouseMove);
+    mountRef.current.addEventListener('mouseleave', handleMouseLeave);
     mountRef.current.addEventListener('mousedown', handleMouseDown);
     mountRef.current.addEventListener('mouseup', handleMouseUp);
     mountRef.current.addEventListener('click', handleClick);
@@ -2761,10 +2836,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           hoveredObjectRef.current = null;
         }
 
-        // 新しくホバーしたオブジェクトを設定（選択中は除外）
+        // 管路オブジェクト上ではポインタカーソルを表示
         if (visibleIntersects.length > 0) {
           const hoveredObject = visibleIntersects[0].object;
-          if (hoveredObject !== selectedMeshRef.current) {
+          const objectData = hoveredObject?.userData?.objectData;
+          if (objectData && isPipeObject(objectData)) {
             document.body.style.cursor = 'pointer';
             hoveredObjectRef.current = hoveredObject;
           }
@@ -2905,6 +2981,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       try {
         if (currentMount) {
           currentMount.removeEventListener('mousemove', handleMouseMove);
+          currentMount.removeEventListener('mouseleave', handleMouseLeave);
           currentMount.removeEventListener('mousedown', handleMouseDown);
           currentMount.removeEventListener('mouseup', handleMouseUp);
           currentMount.removeEventListener('click', handleClick);
@@ -3887,12 +3964,17 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   return (
     <div className="scene3d-container">
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+      <PipelineHoverTooltip
+        summary={pipeHoverTooltip?.summary}
+        position={pipeHoverTooltip?.position}
+      />
 
       {/* 左上の管路情報 */}
       {showGuides && !hideInfoPanel && (
         <div className="pipeline-info-text">
           <div className="section-title">◆管路情報</div>
           左クリック: 管路情報を表示します<br />
+          マウスオーバー: 管路概要をポップアップ表示（比較用）<br />
           <div className="section-title">◆離隔計測</div>
           左Shift+左ドラッグ: 管路間の最近接距離を計測します<br />
           中クリック:地表面で折れ線の長さを計測します<br />

@@ -91,6 +91,9 @@ const THREE_POINT_MEASUREMENT_CONFIG = Object.freeze({
   },
   transformControl: {
     size: 0.9,
+    // HUDの軸定義（東=+X、北=-Z）とTransformControlsの表示方向を合わせる。
+    // X軸は維持しつつZ軸だけ反転させるため、編集対象のローカル空間をX軸180度回転させる。
+    localAxisRotation: new THREE.Euler(Math.PI, 0, 0),
   },
   terrainHeightSnap: {
     raycastMargin: 1000,
@@ -228,6 +231,7 @@ class ThreePointMeasurement {
     this.transformControl = new TransformControls(this.camera, this.renderer.domElement);
     this.transformControl.size = THREE_POINT_MEASUREMENT_CONFIG.transformControl.size;
     this.transformControl.setMode('translate');
+    this.transformControl.setSpace('local');
     this.transformControl.showX = true;
     this.transformControl.showY = false;
     this.transformControl.showZ = true;
@@ -391,6 +395,7 @@ class ThreePointMeasurement {
     });
     const sphere = new THREE.Mesh(geometry, material);
     sphere.position.copy(point);
+    sphere.rotation.copy(THREE_POINT_MEASUREMENT_CONFIG.transformControl.localAxisRotation);
     sphere.userData.pointKey = pointKey;
     sphere.userData.lockedY = point.y;
     this.scene.add(sphere);

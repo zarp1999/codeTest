@@ -11,6 +11,18 @@ const POLYLINE_MEASUREMENT_CONFIG = {
     opacity: 0.95,
     renderOrder: 9500,
   },
+  point: {
+    radius: 0.2,
+    widthSegments: 16,
+    heightSegments: 16,
+    opacity: 0.95,
+    renderOrder: 9503,
+    colors: {
+      start: 0x4caf50,
+      end: 0xff9800,
+      middle: 0xffd166,
+    },
+  },
   label: {
     canvasWidth: 1024,
     canvasHeight: 384,
@@ -71,6 +83,7 @@ class PolylineMeasurement {
     this.domElement = null;
     this.points = [];
     this.segments = []; // { line, sprite, texture, sectionIndex, sectionDistance, cumulativeDistance, horizontalDistance, verticalDistance }
+    this.pointSpheres = []; // { sphere, role }
     this.pointLabels = []; // { sprite, texture, position }
     this.labelMode = 'section'; // 'section' | 'cumulative'
 
@@ -146,12 +159,49 @@ class PolylineMeasurement {
   addPoint(point) {
     const prevPoint = this.points[this.points.length - 1];
     this.points.push(point.clone());
+    this.createPointSphere(point);
+    this.updatePointSphereRoles();
     this.createPointCoordinateLabel(point);
 
     if (prevPoint) {
       const sectionIndex = this.points.length - 1;
       this.createSegment(prevPoint, point, sectionIndex);
     }
+  }
+
+  createPointSphere(point) {
+    const { point: pointConfig } = POLYLINE_MEASUREMENT_CONFIG;
+    const geometry = new THREE.SphereGeometry(
+      pointConfig.radius,
+      pointConfig.widthSegments,
+      pointConfig.heightSegments
+    );
+    const material = new THREE.MeshBasicMaterial({
+      color: pointConfig.colors.end,
+      depthTest: false,
+      transparent: true,
+      opacity: pointConfig.opacity
+    });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.copy(point);
+    sphere.renderOrder = pointConfig.renderOrder;
+    this.scene.add(sphere);
+    this.pointSpheres.push({ sphere, role: 'end' });
+  }
+
+  updatePointSphereRoles() {
+    const { colors } = POLYLINE_MEASUREMENT_CONFIG.point;
+    const lastIndex = this.pointSpheres.length - 1;
+
+    this.pointSpheres.forEach((pointSphere, index) => {
+      const { sphere } = pointSphere;
+      if (!sphere?.material?.color) return;
+
+      const role = index === 0 ? 'start' : index === lastIndex ? 'end' : 'middle';
+      pointSphere.role = role;
+      sphere.material.color.setHex(colors[role]);
+      sphere.material.needsUpdate = true;
+    });
   }
 
   createPointCoordinateLabel(point) {
@@ -387,6 +437,15 @@ class PolylineMeasurement {
       texture?.dispose();
     });
     this.segments = [];
+
+    this.pointSpheres.forEach(({ sphere }) => {
+      if (sphere) {
+        this.scene.remove(sphere);
+        sphere.geometry?.dispose();
+        sphere.material?.dispose();
+      }
+    });
+    this.pointSpheres = [];
 
     this.pointLabels.forEach(({ sprite, texture }) => {
       if (sprite) {
