@@ -776,6 +776,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const summary = buildPipelineHoverSummary(objectData, {
       selectedMesh: hoveredMesh,
       shapeTypes,
+      sourceTypes,
     });
     if (!summary) {
       clearPipeHoverTooltip();
@@ -2809,10 +2810,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             camera.position.copy(nextPos);
             camera.up.set(0, 1, 0);
 
+            // center.y ≠ カメラY のまま lookAt すると視線に鉛直成分が乗り、表示ピッチが0にならない。
+            // 同じ高さの点を見ることで水平視線（ピッチ0）を保つ。
+            const lookTarget = new THREE.Vector3(center.x, nextPos.y, center.z);
+
             if (controls) {
-              controls.target.copy(center);
+              controls.target.copy(lookTarget);
             }
-            camera.lookAt(center);
+            camera.lookAt(lookTarget);
             camera.updateMatrixWorld();
             if (controls) {
               controls.update();
@@ -3945,9 +3950,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             cameraPosition.y = SCENE3D_CONFIG.camera.sectionViewHeight;
 
             cameraRef.current.position.copy(cameraPosition);
-            // カメラを断面平面の中心に向ける
-            cameraRef.current.lookAt(planeCenter);
-            controlsRef.current.target.copy(planeCenter);
+            // カメラYと平面中心Yがずれるとピッチが付くため、水平視線用ターゲットを使う
+            const lookTarget = new THREE.Vector3(
+              planeCenter.x,
+              cameraPosition.y,
+              planeCenter.z
+            );
+            cameraRef.current.lookAt(lookTarget);
+            controlsRef.current.target.copy(lookTarget);
             controlsRef.current.update();
           }
         }
@@ -4008,6 +4018,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               selectedObject={selectedObject}
               selectedMesh={selectedMeshRef.current}
               shapeTypes={shapeTypes}
+              sourceTypes={sourceTypes}
               onRegister={handleRegister}
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}

@@ -8,6 +8,7 @@ const VIEWPORT_MARGIN = 8;
 
 const HOVER_FIELDS = [
   { key: '識別番号', label: '識別番号' },
+  { key: '情報源', label: '情報源' },
   { key: '東西[m]', label: '東西[m]' },
   { key: '土被り深さ[m]', label: '土被り深さ[m]' },
   { key: '南北[m]', label: '南北[m]' },

@@ -13,13 +13,19 @@ function getShapeTypeName(shapeTypes, shapeType) {
   return shapeTypeData ? shapeTypeData.shape_type : '';
 }
 
+function getSourceTypeName(sourceTypes, sourceTypeId) {
+  if (!sourceTypes || sourceTypeId == null) return '';
+  const sourceTypeData = sourceTypes.find((st) => String(st.id) === String(sourceTypeId));
+  return sourceTypeData ? sourceTypeData.source_type : '';
+}
+
 /**
  * 管路オブジェクトから表示用データを構築する（PipelineInfoDisplay / ホバー共通）
  */
-export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes = null } = {}) {
+export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes = null, sourceTypes = null } = {}) {
   if (!objectData) return null;
 
-  const { feature_id, attributes, geometry, shape_type } = objectData;
+  const { feature_id, attributes, geometry, shape_type, source_type_id } = objectData;
   const geom = geometry?.[0];
   const isExtrude = Array.isArray(geom?.extrudePath) && geom.extrudePath.length >= 2;
   const shapeTypeName = getShapeTypeName(shapeTypes, shape_type);
@@ -253,18 +259,20 @@ export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes 
         : endPoint
           ? endPoint[1].toFixed(3)
           : '',
+    情報源: getSourceTypeName(sourceTypes, source_type_id),
     種別: attributes?.pipe_kind || '',
     材質: attributes?.material || '',
   };
 }
 
-/** ホバーツールチップ用の要約（読み取り専用7項目） */
+/** ホバーツールチップ用の要約（読み取り専用） */
 export function buildPipelineHoverSummary(objectData, options = {}) {
   const data = buildPipelineData(objectData, options);
   if (!data) return null;
 
   return {
     識別番号: data.識別番号,
+    情報源: data.情報源,
     '東西[m]': data['東西[m]'],
     '土被り深さ[m]': data['土被り深さ[m]'],
     '南北[m]': data['南北[m]'],

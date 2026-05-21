@@ -11,6 +11,7 @@ function PipelineInfoDisplay({
   selectedObject,
   selectedMesh,
   shapeTypes,
+  sourceTypes,
   onRegister,
   onDuplicate,
   onDelete,
@@ -28,7 +29,7 @@ function PipelineInfoDisplay({
 
   const updateSelectedObject = () => {
     if (selectedObject) {
-      const pipelineData = buildPipelineData(selectedObject, { selectedMesh, shapeTypes });
+      const pipelineData = buildPipelineData(selectedObject, { selectedMesh, shapeTypes, sourceTypes });
       setOriginalValues(pipelineData || {});
       setInputValues({});
       setHasChanges(false);
@@ -37,7 +38,7 @@ function PipelineInfoDisplay({
 
   useEffect(() => {
     updateSelectedObject();
-  }, [selectedObject, shapeTypes, selectedObject?.geometry]);
+  }, [selectedObject, shapeTypes, sourceTypes, selectedObject?.geometry]);
 
   if (!selectedObject) return null;
 
