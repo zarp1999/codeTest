@@ -183,6 +183,8 @@ const SCENE3D_CONFIG = Object.freeze({
       positionChangeThreshold: 0.001,
       /** カメラ回転変更の検出閾値（ラジアン） */
       rotationChangeThreshold: 0.01,
+      /** OrbitControls操作終了後、自己位置をサーバーへ送るまでの待機時間（ms） */
+      cameraPositionSendDebounceMs: 400,
       /** 距離計算の最小値 */
       minDistance: 0.1,
       /** 管路複製時の垂直オフセット */

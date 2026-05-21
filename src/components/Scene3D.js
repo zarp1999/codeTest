@@ -124,6 +124,23 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // 4キー（断面に正対）
   const faceSectionSideSignRef = useRef(1);
 
+  // OrbitControls操作終了後の自己位置サーバー送信（debounce）
+  const cameraSendDebounceRef = useRef(null);
+  const lastSentCameraRef = useRef(null);
+  const sendCameraDataToServerRef = useRef(null);
+  const scheduleCameraPositionSendRef = useRef(() => {});
+
+  const CAMERA_MOVE_KEYS = new Set([
+    'w', 's', 'a', 'd', 'q', 'e',
+    'arrowup', 'arrowdown', 'arrowleft', 'arrowright',
+  ]);
+
+  const isCameraMoveKey = (key) => CAMERA_MOVE_KEYS.has(String(key).toLowerCase());
+
+  const isAnyCameraMoveKeyPressed = () => (
+    [...CAMERA_MOVE_KEYS].some((key) => keysPressed.current[key])
+  );
+
   /**
    * カメラの yaw/pitch/roll を 'YXZ' として安全に編集するヘルパー
    */
@@ -1972,7 +1989,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
       return;
     }
-    keysPressed.current[event.key.toLowerCase()] = false;
+    const key = event.key.toLowerCase();
+    keysPressed.current[key] = false;
+
+    // WASDQE/矢印キー移動がすべて離されたら、OrbitControlsと同様にdebounce送信
+    if (isCameraMoveKey(key) && !isAnyCameraMoveKeyPressed()) {
+      scheduleCameraPositionSendRef.current();
+    }
   };
 
   // 初期化
@@ -2102,6 +2125,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     controls.keyRotateSpeed = SCENE3D_CONFIG.controls.keyRotateSpeed;
     controlsRef.current = controls;
     updateTargetOffsetFromCamera(cameraRef.current);
+
+    // OrbitControls操作（ズーム・PAN等）終了後に自己位置をサーバーへ自動送信
+    const handleControlsEnd = () => {
+      scheduleCameraPositionSendRef.current();
+    };
+    controls.addEventListener('end', handleControlsEnd);
 
     // 右ドラッグで「向きだけ」回転（位置固定）
     const handleContextMenu = (event) => {
@@ -3037,7 +3066,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       //   potreeViewerRef.current.dispose();
       // }
       if (controlsRef.current) {
+        controlsRef.current.removeEventListener('end', handleControlsEnd);
         controlsRef.current.dispose();
+      }
+      if (cameraSendDebounceRef.current) {
+        clearTimeout(cameraSendDebounceRef.current);
+        cameraSendDebounceRef.current = null;
       }
 
       // アウトラインのクリーンアップ
@@ -3136,6 +3170,60 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     }
   };
 
+  const shouldSkipAutoCameraPositionSend = () => {
+    if (typeof accessor?.updateRegionUserPositionData !== 'function') return true;
+    if (isDragging.current || pendingDragRef.current) return true;
+    if (sectionIsDraggingRef.current || sectionDragPendingRef.current) return true;
+    if (isThreePointMeasurementModeRef.current) return true;
+    return false;
+  };
+
+  const recordLastSentCamera = () => {
+    const camera = cameraRef.current;
+    if (!camera) return;
+    lastSentCameraRef.current = {
+      position: camera.position.clone(),
+      quaternion: camera.quaternion.clone(),
+    };
+  };
+
+  const hasCameraChangedSinceLastSend = () => {
+    const camera = cameraRef.current;
+    const last = lastSentCameraRef.current;
+    if (!camera || !last) return true;
+
+    const posThreshold = SCENE3D_CONFIG.other.positionChangeThreshold;
+    const rotThreshold = SCENE3D_CONFIG.other.rotationChangeThreshold;
+    if (camera.position.distanceTo(last.position) > posThreshold) return true;
+
+    const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+    const lastEuler = new THREE.Euler().setFromQuaternion(last.quaternion, 'YXZ');
+    return (
+      Math.abs(euler.x - lastEuler.x) > rotThreshold ||
+      Math.abs(euler.y - lastEuler.y) > rotThreshold ||
+      Math.abs(euler.z - lastEuler.z) > rotThreshold
+    );
+  };
+
+  const scheduleCameraPositionSend = () => {
+    if (shouldSkipAutoCameraPositionSend()) return;
+
+    if (cameraSendDebounceRef.current) {
+      clearTimeout(cameraSendDebounceRef.current);
+    }
+
+    const delay = SCENE3D_CONFIG.other.cameraPositionSendDebounceMs ?? 400;
+    cameraSendDebounceRef.current = setTimeout(async () => {
+      cameraSendDebounceRef.current = null;
+      if (shouldSkipAutoCameraPositionSend()) return;
+      if (!hasCameraChangedSinceLastSend()) return;
+      await sendCameraDataToServerRef.current?.();
+      recordLastSentCamera();
+    }, delay);
+  };
+
+  scheduleCameraPositionSendRef.current = scheduleCameraPositionSend;
+
   // カメラ位置情報をサーバーに送信する。
   const sendCameraDataToServer = async () => {
     // console.log("カメラ情報を送ります：")
@@ -3157,11 +3245,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         pitchDeg,
         yawDeg
       );
+      recordLastSentCamera();
       //alert('Global position updated successfully');
     } catch (error) {
       console.error('Error updating global position:', error);
     }
-  }
+  };
+
+  sendCameraDataToServerRef.current = sendCameraDataToServer;
 
   const getCurrentCameraBookmark = () => {
     // 現在のThree.jsカメラを、ブックマーク保存用の座標/角度へ変換する
@@ -4045,7 +4136,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             Y:位置向き初期化 P:向き初期化 O:位置初期化 L:パン北向き<br />
             I:チルト水平 T:チルト真下 R:チルト水平・高さ初期値 F:高さ重心<br />
             U:パン重心 J:位置重心 H:重心向き後進 G:重心向き前進 K:重心真下<br />
-            P:ユーザの自己位置をKeyMapに更新
+            M:自己位置をサーバーへ送信（操作終了時は自動送信）<br />
+            WASDQE/矢印・ホイールズーム等の操作終了後、約0.4秒で自己位置を自動送信
             {enableCrossSectionMode && <><br />4:断面に正対</>}
           </div>
         </div>
