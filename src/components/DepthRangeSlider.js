@@ -17,7 +17,8 @@ const MIN_GAP = 0.5;
  *   valueMin: number,
  *   valueMax: number,
  *   onChange: (min: number, max: number) => void,
- *   disabled?: boolean
+ *   disabled?: boolean,
+ *   lockMin?: boolean
  * }} props
  */
 export default function DepthRangeSlider({
@@ -26,7 +27,8 @@ export default function DepthRangeSlider({
   valueMin,
   valueMax,
   onChange,
-  disabled = false
+  disabled = false,
+  lockMin = false
 }) {
   const lo = Math.min(minLimit, maxLimit);
   const hi = Math.max(minLimit, maxLimit);
@@ -66,7 +68,7 @@ export default function DepthRangeSlider({
           max={hi}
           step={0.1}
           value={safeMin}
-          disabled={disabled}
+          disabled={disabled || lockMin}
           onChange={handleMin}
         />
         <input

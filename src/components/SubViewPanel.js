@@ -3,7 +3,7 @@
  *
  * 奥行き視野（near / far）の2段階制御:
  * - Scene3D トップ「視野」… 選択管路重心より手前をまとめてクリップ
- * - 各面下部「視野範囲」… スライダーで near/far を個別指定（こちらが優先）
+ * - 各面下部「視野範囲」… far をスライダーで指定（near はトップ「視野」ON 時は重心深度）
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -158,10 +158,10 @@ const computeSceneDepthRange = (scene, cameraPosition, viewDir) => {
 /**
  * サブビュー正射カメラの near / far を決める。
  *
- * 優先順位（上ほど強い）:
- * 1. 各面下部の「視野範囲」ON … スライダー左=near、右=far
- * 2. Scene3D トップの「視野」ON … near = 選択管路重心の深度（手前をクリップ）
- * 3. 両方 OFF … シーン全体の深度範囲
+ * 優先順位:
+ * - 下部「視野範囲」ON … far = スライダー右。near はトップ「視野」ON なら重心深度、でなければスライダー左
+ * - 両方 OFF … シーン全体の深度範囲
+ * - トップ「視野」のみ ON … near = 重心深度、far = シーン最大
  *
  * Three.js では near より手前（深度が小さい）の物体が描画されなくなる。
  * 「視野」ON 時は選択管路より手前の管路を隠して、奥の管路を見やすくする。
@@ -174,18 +174,24 @@ const resolveNearFar = ({
   focusDepth,
   fallbackDistance
 }) => {
-  // 優先度 1: 面ごとのスライダー
-  if (rangeEnabled && rangeValues) {
-    const near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
-    const far = Math.max(near + DEPTH_MIN_SPAN, rangeValues.max);
-    return { near, far };
-  }
-
   const sceneMin = sceneLimits.min;
   const sceneMax = Math.max(sceneLimits.max, sceneMin + DEPTH_MIN_SPAN);
   const fallbackFar = Math.max(2000, (fallbackDistance || 60) * 40);
 
-  // 優先度 2: トップ「視野」（選択管路の重心深度を near に）
+  // 下部「視野範囲」ON: far はスライダー右。near はトップ「視野」+ 選択管路があれば重心深度
+  if (rangeEnabled && rangeValues) {
+    let near;
+    if (depthFocusEnabled && Number.isFinite(focusDepth)) {
+      near = THREE.MathUtils.clamp(focusDepth, sceneMin, sceneMax - DEPTH_MIN_SPAN);
+      near = Math.max(DEPTH_NEAR_MARGIN, near);
+    } else {
+      near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
+    }
+    const far = Math.max(near + DEPTH_MIN_SPAN, rangeValues.max);
+    return { near, far };
+  }
+
+  // トップ「視野」のみ（選択管路の重心深度を near に）
   if (depthFocusEnabled && Number.isFinite(focusDepth)) {
     const near = THREE.MathUtils.clamp(
       focusDepth,
@@ -267,6 +273,12 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   const [depthRangeValues, setDepthRangeValues] = useState(createDefaultDepthRangeValues);
   // renderSubViews 毎フレーム更新: シーンが視線上に占める深度範囲（スライダー上限下限の目安）
   const depthLimitsRef = useRef(createDefaultDepthRangeValues());
+  // 「視野範囲」OFF 時に表示する最小〜最大（ref を React 表示へ同期）
+  const [depthLimitsDisplay, setDepthLimitsDisplay] = useState(createDefaultDepthRangeValues);
+  const depthLimitsSyncSnapshotRef = useRef('');
+  const depthLimitsSyncTimeRef = useRef(0);
+  // renderSubViews で更新: トップ「視野」+ 下部「視野範囲」時の near 表示用
+  const focusDepthByViewRef = useRef({ front: null, side: null, top: null });
   // animate ループから読むため React state を ref に同期
   const depthFocusEnabledRef = useRef(depthFocusEnabled);
   const depthRangeEnabledRef = useRef(depthRangeEnabled);
@@ -545,6 +557,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
           const meshCenter = getMeshWorldCenter(selectedMesh, state.center);
           focusDepth = depthAlongView(meshCenter, camera.position, _viewDirScratch);
         }
+        focusDepthByViewRef.current[viewDef.key] = focusDepth;
 
         const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
         const rangeValues = depthRangeValuesRef.current[viewDef.key];
@@ -583,6 +596,21 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         }
       });
 
+      // 「視野範囲」OFF の面向け: 深度範囲表示を定期的に同期
+      const anyRangeOff = VIEW_DEFS.some((v) => !depthRangeEnabledRef.current[v.key]);
+      if (anyRangeOff) {
+        const snapshot = JSON.stringify(depthLimitsRef.current);
+        const now = performance.now();
+        if (
+          snapshot !== depthLimitsSyncSnapshotRef.current
+          && now - depthLimitsSyncTimeRef.current > 200
+        ) {
+          depthLimitsSyncSnapshotRef.current = snapshot;
+          depthLimitsSyncTimeRef.current = now;
+          setDepthLimitsDisplay({ ...depthLimitsRef.current });
+        }
+      }
+
       renderer.setScissorTest(false);
       // 以降の描画処理に影響しないよう、viewportを全体へ戻す
       renderer.setViewport(0, 0, canvasWidth, canvasHeight);
@@ -593,20 +621,37 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   /** 下部「視野範囲」ON 時、直近フレームのシーン深度範囲でスライダーを初期化 */
   const handleToggleDepthRange = (viewKey, enabled) => {
     setDepthRangeEnabled((prev) => ({ ...prev, [viewKey]: enabled }));
-    if (enabled) {
+    if (!enabled) {
       const limits = depthLimitsRef.current[viewKey] || { min: 0, max: 1000 };
-      setDepthRangeValues((prev) => ({
+      setDepthLimitsDisplay((prev) => ({
         ...prev,
         [viewKey]: { min: limits.min, max: limits.max }
       }));
     }
+    if (enabled) {
+      const limits = depthLimitsRef.current[viewKey] || { min: 0, max: 1000 };
+      const focusDepth = focusDepthByViewRef.current[viewKey];
+      const useFocusNear = depthFocusEnabledRef.current && Number.isFinite(focusDepth);
+      setDepthRangeValues((prev) => ({
+        ...prev,
+        [viewKey]: {
+          min: useFocusNear ? focusDepth : limits.min,
+          max: limits.max
+        }
+      }));
+    }
   };
 
-  /** デュアルスライダー変更 → near(min) / far(max) を state に反映 */
-  const handleDepthRangeChange = (viewKey, min, max) => {
+  /**
+   * スライダー変更 → state に反映。
+   * トップ「視野」+ 下部「視野範囲」かつ重心深度ありのときは far のみ更新（near は毎フレーム重心から算出）。
+   */
+  const handleDepthRangeChange = (viewKey, min, max, lockNearToFocus = false) => {
     setDepthRangeValues((prev) => ({
       ...prev,
-      [viewKey]: { min, max }
+      [viewKey]: lockNearToFocus
+        ? { min: prev[viewKey].min, max }
+        : { min, max }
     }));
   };
 
@@ -647,27 +692,43 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                 </span>
               </label>
             </div>
-            {/* 面ごとの奥行きクリップ。ON 時はトップ「視野」より優先 */}
+            {/* 面ごとの奥行きクリップ。far はスライダー。トップ「視野」ON 時は near=重心で左ハンドル固定 */}
             <div className="subview-depth-controls">
-              <label className="subview-depth-toggle">
-                <input
-                  type="checkbox"
-                  checked={depthRangeEnabled[view.key]}
-                  onChange={(e) => handleToggleDepthRange(view.key, e.target.checked)}
-                />
-                <span>視野範囲</span>
-              </label>
+              <div className="subview-depth-row">
+                <label className="subview-depth-toggle">
+                  <input
+                    type="checkbox"
+                    checked={depthRangeEnabled[view.key]}
+                    onChange={(e) => handleToggleDepthRange(view.key, e.target.checked)}
+                  />
+                  <span>視野範囲</span>
+                </label>
+                {!depthRangeEnabled[view.key] && (() => {
+                  const limits = depthLimitsDisplay[view.key]
+                    || depthLimitsRef.current[view.key]
+                    || { min: 0, max: 1000 };
+                  return (
+                    <span className="subview-depth-limits-hint">
+                      {`最小(${limits.min.toFixed(1)})〜最大(${limits.max.toFixed(1)})`}
+                    </span>
+                  );
+                })()}
+              </div>
               {depthRangeEnabled[view.key] && (() => {
                 const limits = depthLimitsRef.current[view.key] || { min: 0, max: 1000 };
                 const values = depthRangeValues[view.key];
-                // スライダー軌道: シーン範囲と現在値の両方を含む（操作中にハンドルがはみ出ても操作可能）
+                const focusDepth = focusDepthByViewRef.current[view.key];
+                const lockNearToFocus = depthFocusEnabled
+                  && Number.isFinite(focusDepth);
+                const displayMin = lockNearToFocus ? focusDepth : values.min;
                 return (
                   <DepthRangeSlider
-                    minLimit={Math.min(limits.min, values.min)}
+                    minLimit={Math.min(limits.min, displayMin)}
                     maxLimit={Math.max(limits.max, values.max)}
-                    valueMin={values.min}
+                    valueMin={displayMin}
                     valueMax={values.max}
-                    onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
+                    lockMin={lockNearToFocus}
+                    onChange={(min, max) => handleDepthRangeChange(view.key, min, max, lockNearToFocus)}
                   />
                 );
               })()}

@@ -88,6 +88,13 @@
   pointer-events: auto;
 }
 
+.subview-depth-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .subview-depth-toggle {
   display: inline-flex;
   align-items: center;
@@ -97,8 +104,17 @@
   font-weight: 600;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .subview-depth-toggle input {
   margin: 0;
+}
+
+.subview-depth-limits-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
