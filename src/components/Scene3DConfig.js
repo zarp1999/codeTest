@@ -185,6 +185,8 @@ const SCENE3D_CONFIG = Object.freeze({
       rotationChangeThreshold: 0.01,
       /** OrbitControls操作終了後、自己位置をサーバーへ送るまでの待機時間（ms） */
       cameraPositionSendDebounceMs: 400,
+      /** 自己位置送信後、SSE経由のuserPositionsでカメラを上書きしない時間（ms） */
+      suppressUserPositionSyncAfterSendMs: 1500,
       /** 距離計算の最小値 */
       minDistance: 0.1,
       /** 管路複製時の垂直オフセット */

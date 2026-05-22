@@ -129,6 +129,25 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const lastSentCameraRef = useRef(null);
   const sendCameraDataToServerRef = useRef(null);
   const scheduleCameraPositionSendRef = useRef(() => {});
+  const localCameraControlActiveRef = useRef(false);
+  const suppressUserPositionSyncUntilRef = useRef(0);
+  const hasAppliedInitialUserPositionRef = useRef(false);
+
+  const extendSuppressUserPositionSync = (ms) => {
+    const duration = Number.isFinite(ms)
+      ? ms
+      : (SCENE3D_CONFIG.other.suppressUserPositionSyncAfterSendMs ?? 1500);
+    suppressUserPositionSyncUntilRef.current = Math.max(
+      suppressUserPositionSyncUntilRef.current,
+      Date.now() + duration
+    );
+  };
+
+  const shouldApplyUserPositionToCamera = () => {
+    if (localCameraControlActiveRef.current) return false;
+    if (Date.now() < suppressUserPositionSyncUntilRef.current) return false;
+    return true;
+  };
 
   const CAMERA_MOVE_KEYS = new Set([
     'w', 's', 'a', 'd', 'q', 'e',
@@ -1981,7 +2000,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return;
     }
 
-    keysPressed.current[event.key.toLowerCase()] = true;
+    const key = event.key.toLowerCase();
+    keysPressed.current[key] = true;
+    if (isCameraMoveKey(key)) {
+      localCameraControlActiveRef.current = true;
+    }
   };
 
   const handleKeyUp = (event) => {
@@ -1993,8 +2016,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     keysPressed.current[key] = false;
 
     // WASDQE/矢印キー移動がすべて離されたら、OrbitControlsと同様にdebounce送信
-    if (isCameraMoveKey(key) && !isAnyCameraMoveKeyPressed()) {
-      scheduleCameraPositionSendRef.current();
+    if (isCameraMoveKey(key)) {
+      if (!isAnyCameraMoveKeyPressed()) {
+        localCameraControlActiveRef.current = false;
+        scheduleCameraPositionSendRef.current();
+      }
     }
   };
 
@@ -2127,9 +2153,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     updateTargetOffsetFromCamera(cameraRef.current);
 
     // OrbitControls操作（ズーム・PAN等）終了後に自己位置をサーバーへ自動送信
+    const handleControlsStart = () => {
+      localCameraControlActiveRef.current = true;
+    };
     const handleControlsEnd = () => {
+      localCameraControlActiveRef.current = false;
       scheduleCameraPositionSendRef.current();
     };
+    controls.addEventListener('start', handleControlsStart);
     controls.addEventListener('end', handleControlsEnd);
 
     // 右ドラッグで「向きだけ」回転（位置固定）
@@ -2148,6 +2179,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       event.stopPropagation();
 
       isRightDraggingRef.current = true;
+      localCameraControlActiveRef.current = true;
       rightDragLastPosRef.current = { x: event.clientX, y: event.clientY };
 
       // 現在のカメラ姿勢を yaw/pitch として取得
@@ -2226,6 +2258,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       event.stopPropagation();
 
       isRightDraggingRef.current = false;
+      localCameraControlActiveRef.current = false;
     };
 
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
@@ -3066,6 +3099,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       //   potreeViewerRef.current.dispose();
       // }
       if (controlsRef.current) {
+        controlsRef.current.removeEventListener('start', handleControlsStart);
         controlsRef.current.removeEventListener('end', handleControlsEnd);
         controlsRef.current.dispose();
       }
@@ -3120,8 +3154,21 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   }, []);
 
   useEffect(() => {
-    // 初期カメラは props.userPositions から設定（App 側でフェッチ済み）
-    updateCameraPosition(userPositions[0])
+    const userPos = userPositions?.[0];
+    if (!userPos) return;
+
+    // 初回ロード時のみ必ず反映。以降はローカル操作中・自己送信直後はSSE上書きを防ぐ。
+    if (!hasAppliedInitialUserPositionRef.current) {
+      updateCameraPosition(userPos);
+      hasAppliedInitialUserPositionRef.current = true;
+      return;
+    }
+
+    if (!shouldApplyUserPositionToCamera()) {
+      return;
+    }
+
+    updateCameraPosition(userPos);
   }, [userPositions]);
 
   // ユーザー位置情報でカメラ位置を更新する。
@@ -3213,12 +3260,16 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     }
 
     const delay = SCENE3D_CONFIG.other.cameraPositionSendDebounceMs ?? 400;
+    const suppressAfterSendMs = SCENE3D_CONFIG.other.suppressUserPositionSyncAfterSendMs ?? 1500;
+    // debounce待ち＋送信完了後のSSE返却まで、userPositionsによるカメラ上書きを抑止
+    extendSuppressUserPositionSync(delay + suppressAfterSendMs);
+
     cameraSendDebounceRef.current = setTimeout(async () => {
       cameraSendDebounceRef.current = null;
       if (shouldSkipAutoCameraPositionSend()) return;
       if (!hasCameraChangedSinceLastSend()) return;
+      extendSuppressUserPositionSync(suppressAfterSendMs);
       await sendCameraDataToServerRef.current?.();
-      recordLastSentCamera();
     }, delay);
   };
 
@@ -3246,6 +3297,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         yawDeg
       );
       recordLastSentCamera();
+      extendSuppressUserPositionSync(
+        SCENE3D_CONFIG.other.suppressUserPositionSyncAfterSendMs ?? 1500
+      );
       //alert('Global position updated successfully');
     } catch (error) {
       console.error('Error updating global position:', error);
