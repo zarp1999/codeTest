@@ -568,10 +568,13 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const [showEquipmentBookmarksPanel, setShowEquipmentBookmarksPanel] = useState(false);
   const [showSubViews, setShowSubViews] = useState(false);
   const [subViewFollowEnabled, setSubViewFollowEnabled] = useState(true);
+  // サブビュー: 選択管路より手前をクリップ（各面の near を重心深度に）
+  const [subViewDepthFocusEnabled, setSubViewDepthFocusEnabled] = useState(false);
   const [isThreePointMeasurementMode, setIsThreePointMeasurementMode] = useState(false);
   // animateループ内の古いクロージャを避けるため、表示状態はrefにも同期して参照する
   const showSubViewsRef = useRef(false);
   const subViewFollowEnabledRef = useRef(true);
+  const subViewDepthFocusEnabledRef = useRef(false);
   const isThreePointMeasurementModeRef = useRef(false);
   const [equipmentSearchKeyword, setEquipmentSearchKeyword] = useState('');
   const [equipmentSearchRequestId, setEquipmentSearchRequestId] = useState(0);
@@ -614,6 +617,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     setSubViewFollowEnabled(event.target.checked);
   };
 
+  /** サブビュー「視野」… 選択管路の奥行きを near にして手前管路を隠す */
+  const handleToggleSubViewDepthFocus = (event) => {
+    setSubViewDepthFocusEnabled(event.target.checked);
+  };
+
   const handleStartThreePointMeasurement = () => {
     setIsThreePointMeasurementMode(true);
   };
@@ -639,6 +647,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   useEffect(() => {
     subViewFollowEnabledRef.current = subViewFollowEnabled;
   }, [subViewFollowEnabled]);
+
+  // SubViewPanel の renderSubViews（animate ループ）から参照
+  useEffect(() => {
+    subViewDepthFocusEnabledRef.current = subViewDepthFocusEnabled;
+  }, [subViewDepthFocusEnabled]);
 
   useEffect(() => {
     isThreePointMeasurementModeRef.current = isThreePointMeasurementMode;
@@ -4238,14 +4251,25 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           </button>
         )}
         {!enableCrossSectionMode && showSubViews && (
-          <label className="scene-top-right-checkbox">
-            <input
-              type="checkbox"
-              checked={subViewFollowEnabled}
-              onChange={handleToggleSubViewFollow}
-            />
-            サブビュー追従
-          </label>
+          <>
+            <label className="scene-top-right-checkbox">
+              <input
+                type="checkbox"
+                checked={subViewFollowEnabled}
+                onChange={handleToggleSubViewFollow}
+              />
+              サブビュー追従
+            </label>
+            {/* 全サブビュー共通: 選択管路手前をクリップ（面ごと「視野範囲」OFF 時のみ有効） */}
+            <label className="scene-top-right-checkbox">
+              <input
+                type="checkbox"
+                checked={subViewDepthFocusEnabled}
+                onChange={handleToggleSubViewDepthFocus}
+              />
+              視野
+            </label>
+          </>
         )}
         <input
           type="text"
@@ -4300,9 +4324,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         />
       )}
 
+      {/* depthFocusEnabled: トップ「視野」チェック → 選択管路手前のクリップ */}
       <SubViewPanel
         ref={subViewPanelRef}
         visible={!enableCrossSectionMode && showSubViews}
+        depthFocusEnabled={subViewDepthFocusEnabled}
       />
 
       {/* 画面下部の正射投影モード表示 */}

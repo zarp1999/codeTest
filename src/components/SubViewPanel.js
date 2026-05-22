@@ -1,6 +1,22 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+/**
+ * SubViewPanel — 下部3面サブビュー
+ *
+ * 奥行き視野（near / far）の2段階制御:
+ * - Scene3D トップ「視野」… 選択管路重心より手前をまとめてクリップ
+ * - 各面下部「視野範囲」… スライダーで near/far を個別指定（こちらが優先）
+ */
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
+import DepthRangeSlider from './DepthRangeSlider';
 import './SubViewPanel.css';
+
+// --- 奥行き視野（near / far）制御 ---
+/** 下部「視野範囲」UIの帯の高さ（px）。この範囲ではパン・ズームを無効化 */
+const DEPTH_CONTROLS_BAND = 56;
+/** OrthographicCamera.near の下限（0 付近は描画が不安定になりやすい） */
+const DEPTH_NEAR_MARGIN = 0.1;
+/** near と far の最小差（m）。同一値だとクリップ面が潰れる */
+const DEPTH_MIN_SPAN = 1;
 
 /**
  * サブビュー領域の高さ（キャンバス全体に対する比率）。
@@ -71,6 +87,124 @@ const createDefaultViewState = () => ({
   halfSize: 24
 });
 
+// 毎フレームの深度計算で使う作業用ベクトル（GC 抑制）
+const _viewDirScratch = new THREE.Vector3();
+const _depthScratch = new THREE.Vector3();
+const _sceneBoxScratch = new THREE.Box3();
+const _cornerScratch = new THREE.Vector3();
+
+/**
+ * ワールド座標の点を、カメラから見た「奥行き」（視線方向の距離）に変換する。
+ *
+ * イメージ: カメラ位置を原点にし、注視点方向（viewDir）への射影長。
+ * 値が小さいほどカメラに近く（手前）、大きいほど奥。
+ *
+ * @param {THREE.Vector3} point 対象点
+ * @param {THREE.Vector3} cameraPosition サブビューカメラ位置
+ * @param {THREE.Vector3} viewDir 単位ベクトル（カメラ → 注視点）
+ * @returns {number} 深度（m）
+ */
+const depthAlongView = (point, cameraPosition, viewDir) =>
+  _depthScratch.copy(point).sub(cameraPosition).dot(viewDir);
+
+/**
+ * シーン全体が、このサブビューの視線方向に占める深度の min / max を求める。
+ *
+ * 全メッシュの AABB 8 頂点を depthAlongView で投影し、
+ * スライダーの可動範囲や「全範囲表示」の基準に使う。
+ */
+const computeSceneDepthRange = (scene, cameraPosition, viewDir) => {
+  _sceneBoxScratch.makeEmpty();
+  scene.traverse((obj) => {
+    if (!obj.visible || !obj.isMesh || !obj.geometry) return;
+    obj.updateWorldMatrix(true, false);
+    _sceneBoxScratch.expandByObject(obj);
+  });
+
+  if (_sceneBoxScratch.isEmpty()) {
+    return { min: DEPTH_NEAR_MARGIN, max: 2000 };
+  }
+
+  const { min: boxMin, max: boxMax } = _sceneBoxScratch;
+  const corners = [
+    [boxMin.x, boxMin.y, boxMin.z],
+    [boxMin.x, boxMin.y, boxMax.z],
+    [boxMin.x, boxMax.y, boxMin.z],
+    [boxMin.x, boxMax.y, boxMax.z],
+    [boxMax.x, boxMin.y, boxMin.z],
+    [boxMax.x, boxMin.y, boxMax.z],
+    [boxMax.x, boxMax.y, boxMin.z],
+    [boxMax.x, boxMax.y, boxMax.z]
+  ];
+
+  let min = Infinity;
+  let max = -Infinity;
+  corners.forEach(([x, y, z]) => {
+    const d = depthAlongView(_cornerScratch.set(x, y, z), cameraPosition, viewDir);
+    min = Math.min(min, d);
+    max = Math.max(max, d);
+  });
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: DEPTH_NEAR_MARGIN, max: 2000 };
+  }
+
+  return {
+    min: Math.max(DEPTH_NEAR_MARGIN, min),
+    max: Math.max(min + DEPTH_MIN_SPAN, max)
+  };
+};
+
+/**
+ * サブビュー正射カメラの near / far を決める。
+ *
+ * 優先順位（上ほど強い）:
+ * 1. 各面下部の「視野範囲」ON … スライダー左=near、右=far
+ * 2. Scene3D トップの「視野」ON … near = 選択管路重心の深度（手前をクリップ）
+ * 3. 両方 OFF … シーン全体の深度範囲
+ *
+ * Three.js では near より手前（深度が小さい）の物体が描画されなくなる。
+ * 「視野」ON 時は選択管路より手前の管路を隠して、奥の管路を見やすくする。
+ */
+const resolveNearFar = ({
+  sceneLimits,
+  rangeEnabled,
+  rangeValues,
+  depthFocusEnabled,
+  focusDepth,
+  fallbackDistance
+}) => {
+  // 優先度 1: 面ごとのスライダー
+  if (rangeEnabled && rangeValues) {
+    const near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
+    const far = Math.max(near + DEPTH_MIN_SPAN, rangeValues.max);
+    return { near, far };
+  }
+
+  const sceneMin = sceneLimits.min;
+  const sceneMax = Math.max(sceneLimits.max, sceneMin + DEPTH_MIN_SPAN);
+  const fallbackFar = Math.max(2000, (fallbackDistance || 60) * 40);
+
+  // 優先度 2: トップ「視野」（選択管路の重心深度を near に）
+  if (depthFocusEnabled && Number.isFinite(focusDepth)) {
+    const near = THREE.MathUtils.clamp(
+      focusDepth,
+      sceneMin,
+      sceneMax - DEPTH_MIN_SPAN
+    );
+    return {
+      near: Math.max(DEPTH_NEAR_MARGIN, near),
+      far: Math.max(near + DEPTH_MIN_SPAN, sceneMax)
+    };
+  }
+
+  // 優先度 3: 全範囲（従来の自動 near/far に近い挙動）
+  return {
+    near: Math.max(DEPTH_NEAR_MARGIN, sceneMin),
+    far: Math.max(sceneMax, fallbackFar)
+  };
+};
+
 const getMeshWorldCenter = (mesh, fallback) => {
   if (!mesh || !mesh.isObject3D) return fallback.clone();
   mesh.updateWorldMatrix(true, true);
@@ -98,7 +232,8 @@ const getMeshWorldCenter = (mesh, fallback) => {
  * - JSX側: タイトルや枠線などのUIのみを表示
  * - imperative API: 同一renderer / 同一sceneに対し、viewportを切って3カメラ描画
  *
- * @param {{ visible: boolean }} props
+ * @param {{ visible: boolean, depthFocusEnabled?: boolean }} props
+ *   depthFocusEnabled … Scene3D トップの「視野」チェック（選択管路手前をクリップ）
  * @param {React.Ref<{
  *   renderSubViews: (args: {
  *     renderer: THREE.WebGLRenderer,
@@ -109,12 +244,45 @@ const getMeshWorldCenter = (mesh, fallback) => {
  *   }) => void
  * }>} ref
  */
-const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
+/** 各面スライダーの初期値（ON 時に直近の sceneLimits で上書き） */
+const createDefaultDepthRangeValues = () => ({
+  front: { min: 0, max: 1000 },
+  side: { min: 0, max: 1000 },
+  top: { min: 0, max: 1000 }
+});
+
+const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabled = false }, ref) {
   const [directionModeMap, setDirectionModeMap] = useState({
     front: DIRECTION_MODE.NORMAL,
     side: DIRECTION_MODE.NORMAL,
     top: DIRECTION_MODE.NORMAL
   });
+  // 面ごと下部「視野範囲」チェック（ON でスライダー表示・near/far を手動指定）
+  const [depthRangeEnabled, setDepthRangeEnabled] = useState({
+    front: false,
+    side: false,
+    top: false
+  });
+  // スライダー左端=min(near)、右端=max(far) の値（m）
+  const [depthRangeValues, setDepthRangeValues] = useState(createDefaultDepthRangeValues);
+  // renderSubViews 毎フレーム更新: シーンが視線上に占める深度範囲（スライダー上限下限の目安）
+  const depthLimitsRef = useRef(createDefaultDepthRangeValues());
+  // animate ループから読むため React state を ref に同期
+  const depthFocusEnabledRef = useRef(depthFocusEnabled);
+  const depthRangeEnabledRef = useRef(depthRangeEnabled);
+  const depthRangeValuesRef = useRef(depthRangeValues);
+
+  useEffect(() => {
+    depthFocusEnabledRef.current = depthFocusEnabled;
+  }, [depthFocusEnabled]);
+
+  useEffect(() => {
+    depthRangeEnabledRef.current = depthRangeEnabled;
+  }, [depthRangeEnabled]);
+
+  useEffect(() => {
+    depthRangeValuesRef.current = depthRangeValues;
+  }, [depthRangeValues]);
   // 3面それぞれのサブビュー専用カメラ（毎フレーム使い回す）
   const subCamerasRef = useRef({
     front: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000),
@@ -157,7 +325,13 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     subViewAxesRef.current = axes;
   }
 
-  const getHit = ({ clientX, clientY, rect }) => {
+  /** クリック座標が下部「視野範囲」UI 帯内か（パン・ズームと干渉させない） */
+  const isInDepthControlsBand = (localY, frame) => {
+    const bandTop = frame.subTop + frame.subHeight - DEPTH_CONTROLS_BAND;
+    return localY >= bandTop;
+  };
+
+  const getHit = ({ clientX, clientY, rect, excludeDepthControls = false }) => {
     if (!visible || !rect) return null;
     const frame = lastFrameRef.current;
     if (frame.canvasWidth <= 0 || frame.canvasHeight <= 0 || frame.subHeight <= 0) return null;
@@ -165,6 +339,10 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
     if (localX < 0 || localX > frame.canvasWidth || localY < frame.subTop || localY > frame.canvasHeight) {
+      return null;
+    }
+    // スライダー操作エリアはサブビュー操作対象外（excludeDepthControls 時）
+    if (excludeDepthControls && isInDepthControlsBand(localY, frame)) {
       return null;
     }
 
@@ -190,7 +368,13 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     },
 
     handlePointerDown({ clientX, clientY, rect, followEnabled }) {
-      const hit = getHit({ clientX, clientY, rect });
+      if (!rect) return false;
+      const frame = lastFrameRef.current;
+      const localY = clientY - rect.top;
+      // 視野範囲 UI 上のクリックはメイン操作に渡さない（ドラッグ開始もしない）
+      if (isInDepthControlsBand(localY, frame)) return true;
+
+      const hit = getHit({ clientX, clientY, rect, excludeDepthControls: true });
       if (!hit) return false;
       if (followEnabled) return true;
 
@@ -204,8 +388,13 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     },
 
     handlePointerMove({ clientX, clientY, rect, followEnabled }) {
+      if (!rect) return false;
+      const frame = lastFrameRef.current;
+      const localY = clientY - rect.top;
+      if (isInDepthControlsBand(localY, frame)) return true;
+
       if (!dragStateRef.current.active) {
-        return !!getHit({ clientX, clientY, rect });
+        return !!getHit({ clientX, clientY, rect, excludeDepthControls: true });
       }
       if (followEnabled) {
         dragStateRef.current.active = false;
@@ -218,7 +407,6 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       const state = viewStatesRef.current[viewKey];
       if (!viewDef || !state) return true;
 
-      const frame = lastFrameRef.current;
       const panelWidth = Math.max(1, frame.panelWidth || Math.floor(frame.canvasWidth / VIEW_DEFS.length));
       const width = viewDef.key === VIEW_DEFS[VIEW_DEFS.length - 1].key
         ? Math.max(1, frame.canvasWidth - panelWidth * (VIEW_DEFS.length - 1))
@@ -252,7 +440,12 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
     },
 
     handleWheel({ clientX, clientY, rect, deltaY }) {
-      const hit = getHit({ clientX, clientY, rect });
+      if (!rect) return false;
+      const frame = lastFrameRef.current;
+      const localY = clientY - rect.top;
+      if (isInDepthControlsBand(localY, frame)) return true;
+
+      const hit = getHit({ clientX, clientY, rect, excludeDepthControls: true });
       if (!hit) return false;
 
       const state = viewStatesRef.current[hit.viewDef.key];
@@ -288,6 +481,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
      *   canvasWidth: number,
      *   canvasHeight: number
      * }} args
+     * selectedMesh … トップ「視野」ON 時の near 算出に使用（重心深度）
      */
     renderSubViews({ renderer, scene, mainCamera, selectedMesh, followEnabled, canvasWidth, canvasHeight }) {
       if (!visible || !renderer || !scene || !mainCamera) return;
@@ -334,8 +528,34 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         const aspect = Math.max(width / subHeight, 0.1);
         const distance = state.distance;
         const halfSize = state.halfSize;
-        const near = Math.max(0.1, distance * 0.01);
-        const far = Math.max(2000, distance * 40);
+        camera.position.copy(state.center).addScaledVector(effectiveDirection, -distance);
+        camera.up.copy(viewDef.up);
+        camera.lookAt(state.center);
+        camera.updateMatrixWorld(true);
+
+        // --- 奥行きクリップ（near / far）---
+        // 視線方向: 注視点 - カメラ位置（lookAt 後の forward と一致）
+        _viewDirScratch.copy(state.center).sub(camera.position).normalize();
+        const sceneLimits = computeSceneDepthRange(scene, camera.position, _viewDirScratch);
+        depthLimitsRef.current[viewDef.key] = sceneLimits;
+
+        // トップ「視野」用: 選択管路重心の深度（未選択なら null → 全範囲）
+        let focusDepth = null;
+        if (selectedMesh) {
+          const meshCenter = getMeshWorldCenter(selectedMesh, state.center);
+          focusDepth = depthAlongView(meshCenter, camera.position, _viewDirScratch);
+        }
+
+        const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
+        const rangeValues = depthRangeValuesRef.current[viewDef.key];
+        const { near, far } = resolveNearFar({
+          sceneLimits,
+          rangeEnabled,
+          rangeValues,
+          depthFocusEnabled: depthFocusEnabledRef.current,
+          focusDepth,
+          fallbackDistance: distance
+        });
 
         // 各サブビュー用の正射投影範囲を更新
         camera.left = -halfSize * aspect;
@@ -344,12 +564,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
         camera.bottom = -halfSize;
         camera.near = near;
         camera.far = far;
-
-        camera.position.copy(state.center).addScaledVector(effectiveDirection, -distance);
-        camera.up.copy(viewDef.up);
-        camera.lookAt(state.center);
         camera.updateProjectionMatrix();
-        camera.updateMatrixWorld(true);
 
         // 領域を切り替えて同一sceneを描画
         renderer.setViewport(x, 0, width, subHeight);
@@ -373,7 +588,27 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
       renderer.setViewport(0, 0, canvasWidth, canvasHeight);
       renderer.autoClear = prevAutoClear;
     }
-  }), [directionModeMap, visible]);
+  }), [directionModeMap, visible, depthRangeEnabled, depthRangeValues]);
+
+  /** 下部「視野範囲」ON 時、直近フレームのシーン深度範囲でスライダーを初期化 */
+  const handleToggleDepthRange = (viewKey, enabled) => {
+    setDepthRangeEnabled((prev) => ({ ...prev, [viewKey]: enabled }));
+    if (enabled) {
+      const limits = depthLimitsRef.current[viewKey] || { min: 0, max: 1000 };
+      setDepthRangeValues((prev) => ({
+        ...prev,
+        [viewKey]: { min: limits.min, max: limits.max }
+      }));
+    }
+  };
+
+  /** デュアルスライダー変更 → near(min) / far(max) を state に反映 */
+  const handleDepthRangeChange = (viewKey, min, max) => {
+    setDepthRangeValues((prev) => ({
+      ...prev,
+      [viewKey]: { min, max }
+    }));
+  };
 
   const handleDirectionModeChange = (viewKey, mode) => {
     setDirectionModeMap((prev) => {
@@ -411,6 +646,31 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible }, ref) {
                     : view.titleNormal}
                 </span>
               </label>
+            </div>
+            {/* 面ごとの奥行きクリップ。ON 時はトップ「視野」より優先 */}
+            <div className="subview-depth-controls">
+              <label className="subview-depth-toggle">
+                <input
+                  type="checkbox"
+                  checked={depthRangeEnabled[view.key]}
+                  onChange={(e) => handleToggleDepthRange(view.key, e.target.checked)}
+                />
+                <span>視野範囲</span>
+              </label>
+              {depthRangeEnabled[view.key] && (() => {
+                const limits = depthLimitsRef.current[view.key] || { min: 0, max: 1000 };
+                const values = depthRangeValues[view.key];
+                // スライダー軌道: シーン範囲と現在値の両方を含む（操作中にハンドルがはみ出ても操作可能）
+                return (
+                  <DepthRangeSlider
+                    minLimit={Math.min(limits.min, values.min)}
+                    maxLimit={Math.max(limits.max, values.max)}
+                    valueMin={values.min}
+                    valueMax={values.max}
+                    onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
+                  />
+                );
+              })()}
             </div>
           </div>
         ))}

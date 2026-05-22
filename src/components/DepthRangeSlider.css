@@ -1,0 +1,109 @@
+/* サブビュー奥行きクリップ用デュアルレンジ（左=near, 右=far） */
+.depth-range-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 10px;
+  color: #fff;
+}
+
+.depth-range-slider.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.depth-range-value {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.depth-range-value-min {
+  text-align: right;
+}
+
+.depth-range-value-max {
+  text-align: left;
+}
+
+.depth-range-track-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  height: 22px;
+}
+
+.depth-range-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.depth-range-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: rgba(100, 180, 255, 0.85);
+  pointer-events: none;
+}
+
+.depth-range-input {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+  height: 22px;
+  background: transparent;
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.depth-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: #4a9eff;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.depth-range-input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: #4a9eff;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.depth-range-input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.depth-range-input::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.depth-range-input-max {
+  z-index: 2;
+}
+
+.depth-range-input-min {
+  z-index: 1;
+}
