@@ -3,7 +3,7 @@
  *
  * 奥行き視野（near / far）の2段階制御:
  * - Scene3D トップ「視野」… 選択管路重心より手前をまとめてクリップ
- * - 各面下部「視野範囲」… far をスライダーで指定（near はトップ「視野」ON 時は重心深度）
+ * - 各面下部「視野範囲」… near / far をスライダー左右で指定（ON 時は初期 near を重心にできる）
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -159,7 +159,7 @@ const computeSceneDepthRange = (scene, cameraPosition, viewDir) => {
  * サブビュー正射カメラの near / far を決める。
  *
  * 優先順位:
- * - 下部「視野範囲」ON … far = スライダー右。near はトップ「視野」ON なら重心深度、でなければスライダー左
+ * - 下部「視野範囲」ON … near / far = スライダー左右
  * - 両方 OFF … シーン全体の深度範囲
  * - トップ「視野」のみ ON … near = 重心深度、far = シーン最大
  *
@@ -178,15 +178,9 @@ const resolveNearFar = ({
   const sceneMax = Math.max(sceneLimits.max, sceneMin + DEPTH_MIN_SPAN);
   const fallbackFar = Math.max(2000, (fallbackDistance || 60) * 40);
 
-  // 下部「視野範囲」ON: far はスライダー右。near はトップ「視野」+ 選択管路があれば重心深度
+  // 下部「視野範囲」ON: near / far はスライダー左右（左ハンドルは常に操作可能）
   if (rangeEnabled && rangeValues) {
-    let near;
-    if (depthFocusEnabled && Number.isFinite(focusDepth)) {
-      near = THREE.MathUtils.clamp(focusDepth, sceneMin, sceneMax - DEPTH_MIN_SPAN);
-      near = Math.max(DEPTH_NEAR_MARGIN, near);
-    } else {
-      near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
-    }
+    const near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
     const far = Math.max(near + DEPTH_MIN_SPAN, rangeValues.max);
     return { near, far };
   }
@@ -642,16 +636,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
     }
   };
 
-  /**
-   * スライダー変更 → state に反映。
-   * トップ「視野」+ 下部「視野範囲」かつ重心深度ありのときは far のみ更新（near は毎フレーム重心から算出）。
-   */
-  const handleDepthRangeChange = (viewKey, min, max, lockNearToFocus = false) => {
+  /** スライダー変更 → near(min) / far(max) を state に反映 */
+  const handleDepthRangeChange = (viewKey, min, max) => {
     setDepthRangeValues((prev) => ({
       ...prev,
-      [viewKey]: lockNearToFocus
-        ? { min: prev[viewKey].min, max }
-        : { min, max }
+      [viewKey]: { min, max }
     }));
   };
 
@@ -692,7 +681,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                 </span>
               </label>
             </div>
-            {/* 面ごとの奥行きクリップ。far はスライダー。トップ「視野」ON 時は near=重心で左ハンドル固定 */}
+            {/* 面ごとの奥行きクリップ（near / far はスライダー。視野範囲 ON 時の初期 near は重心に合わせることあり） */}
             <div className="subview-depth-controls">
               <div className="subview-depth-row">
                 <label className="subview-depth-toggle">
@@ -717,18 +706,13 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
               {depthRangeEnabled[view.key] && (() => {
                 const limits = depthLimitsRef.current[view.key] || { min: 0, max: 1000 };
                 const values = depthRangeValues[view.key];
-                const focusDepth = focusDepthByViewRef.current[view.key];
-                const lockNearToFocus = depthFocusEnabled
-                  && Number.isFinite(focusDepth);
-                const displayMin = lockNearToFocus ? focusDepth : values.min;
                 return (
                   <DepthRangeSlider
-                    minLimit={Math.min(limits.min, displayMin)}
+                    minLimit={Math.min(limits.min, values.min)}
                     maxLimit={Math.max(limits.max, values.max)}
-                    valueMin={displayMin}
+                    valueMin={values.min}
                     valueMax={values.max}
-                    lockMin={lockNearToFocus}
-                    onChange={(min, max) => handleDepthRangeChange(view.key, min, max, lockNearToFocus)}
+                    onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
                   />
                 );
               })()}
