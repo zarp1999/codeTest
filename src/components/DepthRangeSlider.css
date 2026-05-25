@@ -1,8 +1,8 @@
-/* サブビュー奥行きクリップ用デュアルレンジ（左=near, 右=far） */
+/* サブビュー奥行きクリップ用レンジ（Ant Design Slider・暗背景向け） */
 .depth-range-slider {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   font-size: 10px;
   color: #fff;
@@ -27,114 +27,23 @@
   text-align: left;
 }
 
-.depth-range-track-wrap {
-  position: relative;
+.depth-range-ant-slider {
   flex: 1 1 auto;
-  height: 22px;
-  cursor: pointer;
+  margin: 0 4px;
 }
 
-.depth-range-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 2px;
+.depth-range-slider .depth-range-ant-slider .ant-slider-rail {
   background: rgba(255, 255, 255, 0.25);
-  pointer-events: none;
 }
 
-.depth-range-fill {
-  position: absolute;
-  top: 50%;
-  height: 4px;
-  margin-top: -2px;
-  border-radius: 2px;
+.depth-range-slider .depth-range-ant-slider .ant-slider-track {
   background: rgba(100, 180, 255, 0.85);
-  pointer-events: none;
 }
 
-.depth-range-input {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  top: 50%;
-  margin: 0;
-  transform: translateY(-50%);
-  height: 22px;
-  background: transparent;
-  pointer-events: auto;
-  -webkit-appearance: none;
-  appearance: none;
+.depth-range-slider .depth-range-ant-slider .ant-slider-handle::after {
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.95);
 }
 
-/* 左: max つまみより左側だけ near 用 input が反応 */
-.depth-range-input-min {
-  z-index: 2;
-  clip-path: inset(
-    -8px
-    calc(100% - (var(--pct-max) * 1% + var(--thumb-pad)))
-    -8px
-    -8px
-  );
-}
-
-/* 右: min つまみより右側だけ far 用 input が反応 */
-.depth-range-input-max {
-  z-index: 2;
-  clip-path: inset(
-    -8px
-    -8px
-    -8px
-    calc(var(--pct-min) * 1% + var(--thumb-pad))
-  );
-}
-
-.depth-range-input-active {
-  z-index: 5;
-}
-
-.depth-range-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  background: #4a9eff;
-  cursor: grab;
-}
-
-.depth-range-input:active::-webkit-slider-thumb {
-  cursor: grabbing;
-}
-
-.depth-range-input::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  background: #4a9eff;
-  cursor: grab;
-}
-
-.depth-range-input::-webkit-slider-runnable-track {
-  height: 4px;
-  background: transparent;
-}
-
-.depth-range-input::-moz-range-track {
-  height: 4px;
-  background: transparent;
-}
-
-.depth-range-input-min:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.depth-range-input-min:disabled::-webkit-slider-thumb {
-  cursor: default;
+.depth-range-slider .depth-range-ant-slider .ant-tooltip-inner {
+  font-size: 10px;
 }
