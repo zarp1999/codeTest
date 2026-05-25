@@ -12,6 +12,7 @@ const MIN_GAP = 0.5;
  * - 右 … far（この深度より奥は非表示）
  */
 export default function DepthRangeSlider({
+  className = '',
   minLimit,
   maxLimit,
   valueMin,
@@ -40,7 +41,7 @@ export default function DepthRangeSlider({
   const sliderDisabled = lockMin ? [true, !!disabled] : !!disabled;
 
   return (
-    <div className={`depth-range-slider ${disabled ? 'disabled' : ''}`}>
+    <div className={`depth-range-slider ${className} ${disabled ? 'disabled' : ''}`.trim()}>
       <span className="depth-range-value depth-range-value-min">{safeMin.toFixed(1)} m</span>
       <Slider
         className="depth-range-ant-slider"

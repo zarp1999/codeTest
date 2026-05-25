@@ -681,26 +681,8 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                 </span>
               </label>
             </div>
-            {/* 面ごとの奥行きクリップ（スライダーは「視野範囲」行の背面レイヤー） */}
+            {/* 面ごとの奥行きクリップ（ON 時は最小〜最大表示位置にスライダー） */}
             <div className="subview-depth-controls">
-              {depthRangeEnabled[view.key] && (() => {
-                const limits = sliderLimitsRef.current[view.key]
-                  || depthLimitsRef.current[view.key]
-                  || { min: 0, max: 1000 };
-                const values = depthRangeValues[view.key];
-                return (
-                  <div className="subview-depth-slider-layer">
-                    <DepthRangeSlider
-                      minLimit={limits.min}
-                      maxLimit={limits.max}
-                      valueMin={values.min}
-                      valueMax={values.max}
-                      step={getDepthSliderStep(limits.min, limits.max)}
-                      onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
-                    />
-                  </div>
-                );
-              })()}
               <div className="subview-depth-row">
                 <label className="subview-depth-toggle">
                   <input
@@ -710,7 +692,23 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                   />
                   <span>視野範囲</span>
                 </label>
-                {!depthRangeEnabled[view.key] && (() => {
+                {depthRangeEnabled[view.key] ? (() => {
+                  const limits = sliderLimitsRef.current[view.key]
+                    || depthLimitsRef.current[view.key]
+                    || { min: 0, max: 1000 };
+                  const values = depthRangeValues[view.key];
+                  return (
+                    <DepthRangeSlider
+                      className="subview-depth-range-slider"
+                      minLimit={limits.min}
+                      maxLimit={limits.max}
+                      valueMin={values.min}
+                      valueMax={values.max}
+                      step={getDepthSliderStep(limits.min, limits.max)}
+                      onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
+                    />
+                  );
+                })() : (() => {
                   const limits = depthLimitsDisplay[view.key]
                     || depthLimitsRef.current[view.key]
                     || { min: 0, max: 1000 };
