@@ -195,6 +195,29 @@ export function buildViewDepthData({
 }
 
 /**
+ * 「視野範囲」OFF 時 UI 用の最小〜最大（m）。
+ * - 視野 OFF … frozenLimits をそのまま表示（固定）
+ * - 視野 ON … 最小 = 選択管路重心深度、最大 = 管路奥側（キャップ済み）
+ */
+export function buildDepthLimitsForDisplay(
+  depthFocusEnabled,
+  displayLimits,
+  focusDepth,
+  frozenLimits
+) {
+  if (!depthFocusEnabled && frozenLimits) {
+    return { min: frozenLimits.min, max: frozenLimits.max };
+  }
+  if (depthFocusEnabled && Number.isFinite(focusDepth)) {
+    return {
+      min: focusDepth,
+      max: displayLimits.max
+    };
+  }
+  return { min: displayLimits.min, max: displayLimits.max };
+}
+
+/**
  * サブビュー正射カメラの near / far。
  */
 export function resolveNearFar({
