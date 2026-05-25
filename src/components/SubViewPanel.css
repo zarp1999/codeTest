@@ -71,28 +71,40 @@
   margin: 0;
 }
 
-/* 各サブビュー下部: 「視野範囲」チェック + デュアルスライダー（pointer-events: auto） */
+/* 各サブビュー下部: スライダー（背面）+ 「視野範囲」行（前面） */
 .subview-depth-controls {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  min-height: 56px;
+  pointer-events: none;
+}
+
+.subview-depth-slider-layer {
+  position: absolute;
+  left: 108px;
+  right: 8px;
+  bottom: 10px;
+  z-index: 0;
+  padding: 6px 4px;
+  pointer-events: auto;
+}
+
+.subview-depth-row {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px;
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(0, 0, 0, 0.55);
   pointer-events: auto;
-}
-
-.subview-depth-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .subview-depth-toggle {
