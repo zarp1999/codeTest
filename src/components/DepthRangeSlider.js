@@ -20,7 +20,8 @@ const THUMB_HIT_PAD_PX = 14;
  *   valueMax: number,
  *   onChange: (min: number, max: number) => void,
  *   disabled?: boolean,
- *   lockMin?: boolean
+ *   lockMin?: boolean,
+ *   step?: number
  * }} props
  */
 export default function DepthRangeSlider({
@@ -30,7 +31,8 @@ export default function DepthRangeSlider({
   valueMax,
   onChange,
   disabled = false,
-  lockMin = false
+  lockMin = false,
+  step = 0.1
 }) {
   const [activeRange, setActiveRange] = useState(null);
 
@@ -116,7 +118,7 @@ export default function DepthRangeSlider({
           className={`depth-range-input depth-range-input-min${activeRange === 'min' ? ' depth-range-input-active' : ''}`}
           min={lo}
           max={hi}
-          step={0.1}
+          step={step}
           value={safeMin}
           disabled={disabled || lockMin}
           onChange={handleMin}
@@ -129,7 +131,7 @@ export default function DepthRangeSlider({
           className={`depth-range-input depth-range-input-max${activeRange === 'max' ? ' depth-range-input-active' : ''}`}
           min={lo}
           max={hi}
-          step={0.1}
+          step={step}
           value={safeMax}
           disabled={disabled}
           onChange={handleMax}

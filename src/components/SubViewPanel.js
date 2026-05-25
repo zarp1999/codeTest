@@ -17,6 +17,11 @@ const DEPTH_CONTROLS_BAND = 56;
 const DEPTH_NEAR_MARGIN = 0.1;
 /** near と far の最小差（m）。同一値だとクリップ面が潰れる */
 const DEPTH_MIN_SPAN = 1;
+/** スライダー操作レンジの最大幅（m）。広すぎるとつまみ1pxで数百m動く */
+const SLIDER_MAX_SPAN = 2500;
+/** far の上限（カメラ距離倍率・絶対上限） */
+const FAR_CAP_DISTANCE_MUL = 40;
+const ABSOLUTE_FAR_CAP = 8000;
 
 /**
  * サブビュー領域の高さ（キャンバス全体に対する比率）。
@@ -91,7 +96,30 @@ const createDefaultViewState = () => ({
 const _viewDirScratch = new THREE.Vector3();
 const _depthScratch = new THREE.Vector3();
 const _sceneBoxScratch = new THREE.Box3();
+const _meshBoxScratch = new THREE.Box3();
 const _cornerScratch = new THREE.Vector3();
+
+const isPipelineMesh = (obj) =>
+  obj.visible && obj.isMesh && obj.geometry && obj.userData?.objectData;
+
+/** AABB 8 頂点を視線深度に投影して min/max を更新 */
+const expandBoxCornersDepth = (boxMin, boxMax, cameraPosition, viewDir, acc) => {
+  const corners = [
+    [boxMin.x, boxMin.y, boxMin.z],
+    [boxMin.x, boxMin.y, boxMax.z],
+    [boxMin.x, boxMax.y, boxMin.z],
+    [boxMin.x, boxMax.y, boxMax.z],
+    [boxMax.x, boxMin.y, boxMin.z],
+    [boxMax.x, boxMin.y, boxMax.z],
+    [boxMax.x, boxMax.y, boxMin.z],
+    [boxMax.x, boxMax.y, boxMax.z]
+  ];
+  corners.forEach(([x, y, z]) => {
+    const d = depthAlongView(_cornerScratch.set(x, y, z), cameraPosition, viewDir);
+    acc.min = Math.min(acc.min, d);
+    acc.max = Math.max(acc.max, d);
+  });
+};
 
 /**
  * ワールド座標の点を、カメラから見た「奥行き」（視線方向の距離）に変換する。
@@ -108,51 +136,95 @@ const depthAlongView = (point, cameraPosition, viewDir) =>
   _depthScratch.copy(point).sub(cameraPosition).dot(viewDir);
 
 /**
- * シーン全体が、このサブビューの視線方向に占める深度の min / max を求める。
- *
- * 全メッシュの AABB 8 頂点を depthAlongView で投影し、
- * スライダーの可動範囲や「全範囲表示」の基準に使う。
+ * シーン全体の深度範囲（「視野範囲」OFF 時の参考表示用）。
  */
 const computeSceneDepthRange = (scene, cameraPosition, viewDir) => {
-  _sceneBoxScratch.makeEmpty();
+  const acc = { min: Infinity, max: -Infinity };
   scene.traverse((obj) => {
     if (!obj.visible || !obj.isMesh || !obj.geometry) return;
     obj.updateWorldMatrix(true, false);
-    _sceneBoxScratch.expandByObject(obj);
+    _meshBoxScratch.setFromObject(obj);
+    if (_meshBoxScratch.isEmpty()) return;
+    expandBoxCornersDepth(_meshBoxScratch.min, _meshBoxScratch.max, cameraPosition, viewDir, acc);
   });
 
-  if (_sceneBoxScratch.isEmpty()) {
-    return { min: DEPTH_NEAR_MARGIN, max: 2000 };
-  }
-
-  const { min: boxMin, max: boxMax } = _sceneBoxScratch;
-  const corners = [
-    [boxMin.x, boxMin.y, boxMin.z],
-    [boxMin.x, boxMin.y, boxMax.z],
-    [boxMin.x, boxMax.y, boxMin.z],
-    [boxMin.x, boxMax.y, boxMax.z],
-    [boxMax.x, boxMin.y, boxMin.z],
-    [boxMax.x, boxMin.y, boxMax.z],
-    [boxMax.x, boxMax.y, boxMin.z],
-    [boxMax.x, boxMax.y, boxMax.z]
-  ];
-
-  let min = Infinity;
-  let max = -Infinity;
-  corners.forEach(([x, y, z]) => {
-    const d = depthAlongView(_cornerScratch.set(x, y, z), cameraPosition, viewDir);
-    min = Math.min(min, d);
-    max = Math.max(max, d);
-  });
-
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+  if (!Number.isFinite(acc.min) || !Number.isFinite(acc.max)) {
     return { min: DEPTH_NEAR_MARGIN, max: 2000 };
   }
 
   return {
-    min: Math.max(DEPTH_NEAR_MARGIN, min),
-    max: Math.max(min + DEPTH_MIN_SPAN, max)
+    min: Math.max(DEPTH_NEAR_MARGIN, acc.min),
+    max: Math.max(acc.min + DEPTH_MIN_SPAN, acc.max)
   };
+};
+
+/**
+ * 管路 Mesh（userData.objectData あり）だけの深度範囲。
+ */
+const computePipeDepthRange = (scene, cameraPosition, viewDir) => {
+  const acc = { min: Infinity, max: -Infinity };
+  let found = false;
+  scene.traverse((obj) => {
+    if (!isPipelineMesh(obj)) return;
+    found = true;
+    obj.updateWorldMatrix(true, false);
+    _meshBoxScratch.setFromObject(obj);
+    if (_meshBoxScratch.isEmpty()) return;
+    expandBoxCornersDepth(_meshBoxScratch.min, _meshBoxScratch.max, cameraPosition, viewDir, acc);
+  });
+
+  if (!found || !Number.isFinite(acc.min) || !Number.isFinite(acc.max)) {
+    return computeSceneDepthRange(scene, cameraPosition, viewDir);
+  }
+
+  return {
+    min: Math.max(DEPTH_NEAR_MARGIN, acc.min),
+    max: Math.max(acc.min + DEPTH_MIN_SPAN, acc.max)
+  };
+};
+
+/** 表示・far 用に深度上限をキャップ */
+const capDepthMax = (rawMax, distance) => {
+  const cap = Math.min(
+    ABSOLUTE_FAR_CAP,
+    Math.max(DEPTH_NEAR_MARGIN + DEPTH_MIN_SPAN, (distance || 60) * FAR_CAP_DISTANCE_MUL)
+  );
+  return Math.min(rawMax, cap);
+};
+
+/**
+ * スライダー操作レンジ（管路深度＋注視点付近に絞る。0.1〜数万m の直線操作を避ける）。
+ */
+const buildSliderDepthLimits = (pipeRange, focusDepth, distance) => {
+  const farCap = capDepthMax(pipeRange.max, distance);
+  let sliderMin = Math.max(DEPTH_NEAR_MARGIN, pipeRange.min);
+  let sliderMax = Math.max(sliderMin + DEPTH_MIN_SPAN, Math.min(farCap, pipeRange.max));
+
+  if (Number.isFinite(focusDepth)) {
+    const nearPad = Math.max(40, distance * 0.35);
+    const farPad = Math.max(120, distance * 2);
+    sliderMin = Math.max(sliderMin, focusDepth - nearPad);
+    sliderMax = Math.min(sliderMax, focusDepth + farPad);
+  }
+
+  if (sliderMax - sliderMin > SLIDER_MAX_SPAN) {
+    const center = Number.isFinite(focusDepth)
+      ? focusDepth
+      : (sliderMin + sliderMax) * 0.5;
+    const half = SLIDER_MAX_SPAN * 0.5;
+    sliderMin = Math.max(sliderMin, center - half);
+    sliderMax = Math.min(sliderMax, center + half);
+  }
+
+  sliderMin = Math.max(DEPTH_NEAR_MARGIN, sliderMin);
+  sliderMax = Math.max(sliderMin + DEPTH_MIN_SPAN, sliderMax);
+  return { min: sliderMin, max: sliderMax };
+};
+
+/** スライダー幅に応じた step（m） */
+const getDepthSliderStep = (min, max) => {
+  const span = Math.max(DEPTH_MIN_SPAN, max - min);
+  return Math.max(0.5, Math.min(10, span / 80));
 };
 
 /**
@@ -168,6 +240,7 @@ const computeSceneDepthRange = (scene, cameraPosition, viewDir) => {
  */
 const resolveNearFar = ({
   sceneLimits,
+  sliderLimits,
   rangeEnabled,
   rangeValues,
   depthFocusEnabled,
@@ -178,10 +251,14 @@ const resolveNearFar = ({
   const sceneMax = Math.max(sceneLimits.max, sceneMin + DEPTH_MIN_SPAN);
   const fallbackFar = Math.max(2000, (fallbackDistance || 60) * 40);
 
-  // 下部「視野範囲」ON: near / far はスライダー左右（左ハンドルは常に操作可能）
+  // 下部「視野範囲」ON: near / far はスライダー左右（操作レンジ内にクランプ）
   if (rangeEnabled && rangeValues) {
-    const near = Math.max(DEPTH_NEAR_MARGIN, Math.min(rangeValues.min, rangeValues.max - DEPTH_MIN_SPAN));
-    const far = Math.max(near + DEPTH_MIN_SPAN, rangeValues.max);
+    const lo = sliderLimits?.min ?? sceneMin;
+    const hi = sliderLimits?.max ?? sceneMax;
+    const minVal = THREE.MathUtils.clamp(rangeValues.min, lo, hi - DEPTH_MIN_SPAN);
+    const maxVal = THREE.MathUtils.clamp(rangeValues.max, minVal + DEPTH_MIN_SPAN, hi);
+    const near = Math.max(DEPTH_NEAR_MARGIN, minVal);
+    const far = Math.max(near + DEPTH_MIN_SPAN, maxVal);
     return { near, far };
   }
 
@@ -265,8 +342,10 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   });
   // スライダー左端=min(near)、右端=max(far) の値（m）
   const [depthRangeValues, setDepthRangeValues] = useState(createDefaultDepthRangeValues);
-  // renderSubViews 毎フレーム更新: シーンが視線上に占める深度範囲（スライダー上限下限の目安）
+  // renderSubViews 毎フレーム更新: 参考表示用（管路＋キャップした全体深度）
   const depthLimitsRef = useRef(createDefaultDepthRangeValues());
+  // スライダー操作レンジ（管路付近に絞った値）
+  const sliderLimitsRef = useRef(createDefaultDepthRangeValues());
   // 「視野範囲」OFF 時に表示する最小〜最大（ref を React 表示へ同期）
   const [depthLimitsDisplay, setDepthLimitsDisplay] = useState(createDefaultDepthRangeValues);
   const depthLimitsSyncSnapshotRef = useRef('');
@@ -543,7 +622,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         // 視線方向: 注視点 - カメラ位置（lookAt 後の forward と一致）
         _viewDirScratch.copy(state.center).sub(camera.position).normalize();
         const sceneLimits = computeSceneDepthRange(scene, camera.position, _viewDirScratch);
-        depthLimitsRef.current[viewDef.key] = sceneLimits;
+        const pipeLimits = computePipeDepthRange(scene, camera.position, _viewDirScratch);
+        depthLimitsRef.current[viewDef.key] = {
+          min: pipeLimits.min,
+          max: capDepthMax(sceneLimits.max, distance)
+        };
 
         // トップ「視野」用: 選択管路重心の深度（未選択なら null → 全範囲）
         let focusDepth = null;
@@ -552,11 +635,17 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
           focusDepth = depthAlongView(meshCenter, camera.position, _viewDirScratch);
         }
         focusDepthByViewRef.current[viewDef.key] = focusDepth;
+        sliderLimitsRef.current[viewDef.key] = buildSliderDepthLimits(
+          pipeLimits,
+          focusDepth,
+          distance
+        );
 
         const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
         const rangeValues = depthRangeValuesRef.current[viewDef.key];
         const { near, far } = resolveNearFar({
-          sceneLimits,
+          sceneLimits: depthLimitsRef.current[viewDef.key],
+          sliderLimits: sliderLimitsRef.current[viewDef.key],
           rangeEnabled,
           rangeValues,
           depthFocusEnabled: depthFocusEnabledRef.current,
@@ -623,24 +712,34 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       }));
     }
     if (enabled) {
-      const limits = depthLimitsRef.current[viewKey] || { min: 0, max: 1000 };
+      const limits = sliderLimitsRef.current[viewKey]
+        || depthLimitsRef.current[viewKey]
+        || { min: 0, max: 1000 };
       const focusDepth = focusDepthByViewRef.current[viewKey];
       const useFocusNear = depthFocusEnabledRef.current && Number.isFinite(focusDepth);
+      const initMin = useFocusNear
+        ? THREE.MathUtils.clamp(focusDepth, limits.min, limits.max - DEPTH_MIN_SPAN)
+        : limits.min;
       setDepthRangeValues((prev) => ({
         ...prev,
         [viewKey]: {
-          min: useFocusNear ? focusDepth : limits.min,
+          min: Math.max(DEPTH_NEAR_MARGIN, initMin),
           max: limits.max
         }
       }));
     }
   };
 
-  /** スライダー変更 → near(min) / far(max) を state に反映 */
+  /** スライダー変更 → near(min) / far(max) を state に反映（操作レンジ内にクランプ） */
   const handleDepthRangeChange = (viewKey, min, max) => {
+    const limits = sliderLimitsRef.current[viewKey]
+      || depthLimitsRef.current[viewKey]
+      || { min: 0, max: 1000 };
+    const clampedMin = THREE.MathUtils.clamp(min, limits.min, limits.max - DEPTH_MIN_SPAN);
+    const clampedMax = THREE.MathUtils.clamp(max, clampedMin + DEPTH_MIN_SPAN, limits.max);
     setDepthRangeValues((prev) => ({
       ...prev,
-      [viewKey]: { min, max }
+      [viewKey]: { min: clampedMin, max: clampedMax }
     }));
   };
 
@@ -704,14 +803,17 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                 })()}
               </div>
               {depthRangeEnabled[view.key] && (() => {
-                const limits = depthLimitsRef.current[view.key] || { min: 0, max: 1000 };
+                const limits = sliderLimitsRef.current[view.key]
+                  || depthLimitsRef.current[view.key]
+                  || { min: 0, max: 1000 };
                 const values = depthRangeValues[view.key];
                 return (
                   <DepthRangeSlider
-                    minLimit={Math.min(limits.min, values.min)}
-                    maxLimit={Math.max(limits.max, values.max)}
+                    minLimit={limits.min}
+                    maxLimit={limits.max}
                     valueMin={values.min}
                     valueMax={values.max}
+                    step={getDepthSliderStep(limits.min, limits.max)}
                     onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
                   />
                 );
