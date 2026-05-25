@@ -139,6 +139,20 @@ const createDefaultDepthRangeValues = () => ({
   top: { min: 0, max: 1000 }
 });
 
+/** 視野範囲 ON 時の near(min) / far(max) 初期値（スライダー操作レンジ内） */
+const makeInitialDepthRangeValues = (limits, focusDepth, depthFocusEnabled) => {
+  const lo = limits.min;
+  const hi = limits.max;
+  const useFocusNear = depthFocusEnabled && Number.isFinite(focusDepth);
+  const initMin = useFocusNear
+    ? THREE.MathUtils.clamp(focusDepth, lo, hi - DEPTH_MIN_SPAN)
+    : lo;
+  return {
+    min: Math.max(DEPTH_NEAR_MARGIN, initMin),
+    max: hi
+  };
+};
+
 const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabled = false }, ref) {
   const [directionModeMap, setDirectionModeMap] = useState({
     front: DIRECTION_MODE.NORMAL,
@@ -163,6 +177,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   const depthDisplayRafRef = useRef(null);
   const depthCacheByViewRef = useRef({ front: null, side: null, top: null });
   const focusDepthByViewRef = useRef({ front: null, side: null, top: null });
+  const directionModePrevRef = useRef({
+    front: DIRECTION_MODE.NORMAL,
+    side: DIRECTION_MODE.NORMAL,
+    top: DIRECTION_MODE.NORMAL
+  });
   // animate ループから読むため React state を ref に同期
   const depthFocusEnabledRef = useRef(depthFocusEnabled);
   const depthRangeEnabledRef = useRef(depthRangeEnabled);
@@ -440,6 +459,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         ?? selectedMesh?.uuid
         ?? null;
       let depthLimitsUpdated = false;
+      const depthRangeResyncPatch = {};
 
       VIEW_DEFS.forEach((viewDef, index) => {
         const camera = subCamerasRef.current[viewDef.key];
@@ -504,6 +524,20 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         sliderLimitsRef.current[viewDef.key] = depthData.sliderLimits;
 
         const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
+        const prevDirectionMode = directionModePrevRef.current[viewDef.key];
+        if (prevDirectionMode !== mode) {
+          directionModePrevRef.current[viewDef.key] = mode;
+          if (rangeEnabled) {
+            const initValues = makeInitialDepthRangeValues(
+              depthData.sliderLimits,
+              depthData.focusDepth,
+              depthFocusEnabledRef.current
+            );
+            depthRangeValuesRef.current[viewDef.key] = initValues;
+            depthRangeResyncPatch[viewDef.key] = initValues;
+          }
+        }
+
         const rangeValues = depthRangeValuesRef.current[viewDef.key];
         const { near, far } = resolveNearFar({
           sceneLimits: depthData.displayLimits,
@@ -550,6 +584,17 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         scheduleDepthLimitsDisplaySync();
       }
 
+      const resyncKeys = Object.keys(depthRangeResyncPatch);
+      if (resyncKeys.length > 0) {
+        setDepthRangeValues((prev) => {
+          const next = { ...prev };
+          resyncKeys.forEach((key) => {
+            next[key] = { ...depthRangeResyncPatch[key] };
+          });
+          return next;
+        });
+      }
+
       renderer.setScissorTest(false);
       // 以降の描画処理に影響しないよう、viewportを全体へ戻す
       renderer.setViewport(0, 0, canvasWidth, canvasHeight);
@@ -572,16 +617,15 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         || depthLimitsRef.current[viewKey]
         || { min: 0, max: 1000 };
       const focusDepth = focusDepthByViewRef.current[viewKey];
-      const useFocusNear = depthFocusEnabledRef.current && Number.isFinite(focusDepth);
-      const initMin = useFocusNear
-        ? THREE.MathUtils.clamp(focusDepth, limits.min, limits.max - DEPTH_MIN_SPAN)
-        : limits.min;
+      const initValues = makeInitialDepthRangeValues(
+        limits,
+        focusDepth,
+        depthFocusEnabledRef.current
+      );
+      depthRangeValuesRef.current[viewKey] = initValues;
       setDepthRangeValues((prev) => ({
         ...prev,
-        [viewKey]: {
-          min: Math.max(DEPTH_NEAR_MARGIN, initMin),
-          max: limits.max
-        }
+        [viewKey]: initValues
       }));
     }
   };
@@ -602,6 +646,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   const handleDirectionModeChange = (viewKey, mode) => {
     setDirectionModeMap((prev) => {
       if (prev[viewKey] === mode) return prev;
+      depthCacheByViewRef.current[viewKey] = null;
       return { ...prev, [viewKey]: mode };
     });
   };
