@@ -31,6 +31,7 @@
   position: relative;
   flex: 1 1 auto;
   height: 22px;
+  cursor: pointer;
 }
 
 .depth-range-track {
@@ -42,6 +43,7 @@
   margin-top: -2px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
 }
 
 .depth-range-fill {
@@ -68,6 +70,32 @@
   appearance: none;
 }
 
+/* 左: max つまみより左側だけ near 用 input が反応 */
+.depth-range-input-min {
+  z-index: 2;
+  clip-path: inset(
+    -8px
+    calc(100% - (var(--pct-max) * 1% + var(--thumb-pad)))
+    -8px
+    -8px
+  );
+}
+
+/* 右: min つまみより右側だけ far 用 input が反応 */
+.depth-range-input-max {
+  z-index: 2;
+  clip-path: inset(
+    -8px
+    -8px
+    -8px
+    calc(var(--pct-min) * 1% + var(--thumb-pad))
+  );
+}
+
+.depth-range-input-active {
+  z-index: 5;
+}
+
 .depth-range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -76,8 +104,11 @@
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.9);
   background: #4a9eff;
-  cursor: pointer;
-  pointer-events: auto;
+  cursor: grab;
+}
+
+.depth-range-input:active::-webkit-slider-thumb {
+  cursor: grabbing;
 }
 
 .depth-range-input::-moz-range-thumb {
@@ -86,8 +117,7 @@
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.9);
   background: #4a9eff;
-  cursor: pointer;
-  pointer-events: auto;
+  cursor: grab;
 }
 
 .depth-range-input::-webkit-slider-runnable-track {
@@ -100,15 +130,11 @@
   background: transparent;
 }
 
-.depth-range-input-max {
-  z-index: 2;
-}
-
-.depth-range-input-min {
-  z-index: 1;
-}
-
 .depth-range-input-min:disabled {
   opacity: 0.55;
+  cursor: default;
+}
+
+.depth-range-input-min:disabled::-webkit-slider-thumb {
   cursor: default;
 }
