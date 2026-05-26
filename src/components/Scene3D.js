@@ -1390,6 +1390,57 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     console.log('[CrossSectionPlaneInfo]', JSON.stringify(payload));
   };
 
+  /**
+   * メッシュ中心を画面中央に据え、現在の視線方向を保ったまま固定距離でカメラを再配置する。
+   *
+   * @param {THREE.Object3D} mesh フォーカス対象
+   * @param {{ distance?: number, selectMesh?: boolean }} [options]
+   * @returns {boolean}
+   */
+  const focusCameraOnMesh = (mesh, { distance, selectMesh = false } = {}) => {
+    const activeCamera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!mesh || !activeCamera || !controls) return false;
+
+    const box = new THREE.Box3();
+    try {
+      mesh.updateWorldMatrix(true, true);
+      box.expandByObject(mesh);
+    } catch (_) {
+      return false;
+    }
+    if (box.isEmpty()) return false;
+
+    const center = box.getCenter(new THREE.Vector3());
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.y) || !Number.isFinite(center.z)) {
+      return false;
+    }
+
+    const focusDistance = Number.isFinite(distance)
+      ? distance
+      : SCENE3D_CONFIG.camera.pipelineDblClickFocusDistance;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(activeCamera.quaternion).normalize();
+    if (!Number.isFinite(forward.x) || !Number.isFinite(forward.y) || !Number.isFinite(forward.z)) {
+      return false;
+    }
+
+    activeCamera.position.copy(center.clone().sub(forward.multiplyScalar(focusDistance)));
+    controls.target.copy(center);
+    controls.update();
+
+    if (selectMesh) {
+      selectedMeshRef.current = mesh;
+      setSelectedObject(mesh.userData?.objectData || null);
+      showOutline(mesh);
+    }
+
+    updateTargetOffsetFromCamera(activeCamera);
+    updateCameraInfoFromCamera(activeCamera);
+    syncCamerasFromActive(activeCamera);
+    updateOrthographicFrustum(activeCamera);
+    return true;
+  };
+
   // クリックハンドラー
   const handleClick = (event) => {
     if (isSubViewInteraction(event)) {
@@ -1518,16 +1569,57 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   };
 
   const handleDoubleClick = (event) => {
-    if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return;
+    if (!mountRef.current) return;
+
+    if (showSubViewsRef.current && subViewPanelRef.current) {
+      const rect = mountRef.current.getBoundingClientRect();
+      const handled = subViewPanelRef.current.handleDoubleClick({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect,
+        followEnabled: subViewFollowEnabledRef.current,
+        selectedMesh: selectedMeshRef.current
+      });
+      if (handled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+
+    if (isSubViewInteraction(event)) return;
+    if (isThreePointMeasurementModeRef.current) return;
+    if (enableCrossSectionMode) return;
+    if (event.shiftKey) return;
+
+    if (event.target.closest('.pipeline-info-display')
+      || event.target.closest('.pipeline-info-text')
+      || event.target.closest('.camera-info-container')) {
+      return;
+    }
+    if (event.target !== rendererRef.current?.domElement) return;
+
     const rect = mountRef.current.getBoundingClientRect();
-    const handled = subViewPanelRef.current.handleDoubleClick({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rect,
-      followEnabled: subViewFollowEnabledRef.current,
-      selectedMesh: selectedMeshRef.current
-    });
-    if (handled) {
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    const intersects = raycasterRef.current.intersectObjects(
+      Object.values(objectsRef.current),
+      false
+    );
+    const hit = intersects.find((intersect) =>
+      intersect.object.visible && intersect.object.userData?.objectData
+    );
+    if (!hit) return;
+
+    const clickedObject = hit.object;
+    if (!isPipeObject(clickedObject.userData.objectData)) return;
+
+    if (focusCameraOnMesh(clickedObject, {
+      distance: SCENE3D_CONFIG.camera.pipelineDblClickFocusDistance,
+      selectMesh: true
+    })) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -3428,45 +3520,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
    */
   const panCameraToEquipment = (objectKey) => {
     const mesh = objectsRef.current?.[objectKey];
-    const activeCamera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!mesh || !activeCamera || !controls) return false;
-
-    const box = new THREE.Box3();
-    try {
-      mesh.updateWorldMatrix(true, true);
-      box.expandByObject(mesh);
-    } catch (_) {
-      return false;
-    }
-    if (box.isEmpty()) return false;
-
-    const center = box.getCenter(new THREE.Vector3());
-    if (!Number.isFinite(center.x) || !Number.isFinite(center.y) || !Number.isFinite(center.z)) {
-      return false;
-    }
-
-    const fixedDistance = 10;
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(activeCamera.quaternion).normalize();
-    if (!Number.isFinite(forward.x) || !Number.isFinite(forward.y) || !Number.isFinite(forward.z)) {
-      return false;
-    }
-
-    // 対象中心から固定距離(10m)を保つように、現在姿勢のままカメラ位置のみ再配置する
-    activeCamera.position.copy(center.clone().sub(forward.multiplyScalar(fixedDistance)));
-    controls.target.copy(center);
-    controls.update();
-
-    selectedMeshRef.current = mesh;
-    setSelectedObject(mesh.userData?.objectData || null);
-    // 検索結果選択でも通常クリックと同様にアウトラインを再生成する
-    showOutline(mesh);
-
-    updateTargetOffsetFromCamera(activeCamera);
-    updateCameraInfoFromCamera(activeCamera);
-    syncCamerasFromActive(activeCamera);
-    updateOrthographicFrustum(activeCamera);
-    return true;
+    if (!mesh) return false;
+    return focusCameraOnMesh(mesh, {
+      distance: SCENE3D_CONFIG.camera.equipmentFocusDistance,
+      selectMesh: true
+    });
   };
 
   /**

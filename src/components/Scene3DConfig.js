@@ -27,6 +27,10 @@ const SCENE3D_CONFIG = Object.freeze({
       sectionViewDistance: 80,
       /** 断面表示時のカメラ高さ */
       sectionViewHeight: 0,
+      /** メインビュー管路ダブルクリック時のカメラ距離（m） */
+      pipelineDblClickFocusDistance: 5,
+      /** 設備検索・ブックマークからフォーカスする距離（m） */
+      equipmentFocusDistance: 10,
     },
     /**
      * レンダラー設定。
