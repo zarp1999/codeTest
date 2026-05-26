@@ -105,31 +105,23 @@ export function capDepthMax(rawMax, distance) {
   return Math.min(rawMax, cap);
 }
 
-/** スライダー操作レンジ（管路深度＋注視点付近） */
-export function buildSliderDepthLimits(pipeRange, focusDepth, distance) {
-  const farCap = capDepthMax(pipeRange.max, distance);
-  let sliderMin = Math.max(DEPTH_NEAR_MARGIN, pipeRange.min);
-  let sliderMax = Math.max(sliderMin + DEPTH_MIN_SPAN, Math.min(farCap, pipeRange.max));
+/**
+ * 全管路ベースの表示・スライダー共通レンジ（min/max 固定用）。
+ */
+export function buildPipeDepthLimits(pipeLimits, sceneLimits, distance) {
+  let min = Math.max(DEPTH_NEAR_MARGIN, pipeLimits.min);
+  let max = Math.max(min + DEPTH_MIN_SPAN, capDepthMax(sceneLimits.max, distance));
 
-  if (Number.isFinite(focusDepth)) {
-    const nearPad = Math.max(40, distance * 0.35);
-    const farPad = Math.max(120, distance * 2);
-    sliderMin = Math.max(sliderMin, focusDepth - nearPad);
-    sliderMax = Math.min(sliderMax, focusDepth + farPad);
-  }
-
-  if (sliderMax - sliderMin > SLIDER_MAX_SPAN) {
-    const center = Number.isFinite(focusDepth)
-      ? focusDepth
-      : (sliderMin + sliderMax) * 0.5;
+  if (max - min > SLIDER_MAX_SPAN) {
+    const center = (min + max) * 0.5;
     const half = SLIDER_MAX_SPAN * 0.5;
-    sliderMin = Math.max(sliderMin, center - half);
-    sliderMax = Math.min(sliderMax, center + half);
+    min = Math.max(min, center - half);
+    max = Math.min(max, center + half);
   }
 
-  sliderMin = Math.max(DEPTH_NEAR_MARGIN, sliderMin);
-  sliderMax = Math.max(sliderMin + DEPTH_MIN_SPAN, sliderMax);
-  return { min: sliderMin, max: sliderMax };
+  min = Math.max(DEPTH_NEAR_MARGIN, min);
+  max = Math.max(min + DEPTH_MIN_SPAN, max);
+  return { min, max };
 }
 
 /** スライダー幅に応じた step（m） */
@@ -139,15 +131,14 @@ export function getDepthSliderStep(min, max) {
 }
 
 /**
- * キャッシュ無効化用の署名（カメラ・注視点・向き・選択管路）。
+ * キャッシュ無効化用の署名（カメラ・向き。管路選択は含めない）。
  */
 export function makeDepthCacheSignature({
   center,
   distance,
   directionMode,
   cameraPosition,
-  viewDir,
-  selectedFeatureId
+  viewDir
 }) {
   const fmt = (n) => (Number.isFinite(n) ? n.toFixed(2) : 'n');
   const fmt3 = (v) => `${fmt(v.x)},${fmt(v.y)},${fmt(v.z)}`;
@@ -156,86 +147,51 @@ export function makeDepthCacheSignature({
     fmt(distance),
     directionMode,
     fmt3(cameraPosition),
-    `${fmt(viewDir.x)},${fmt(viewDir.y)},${fmt(viewDir.z)}`,
-    selectedFeatureId ?? ''
+    `${fmt(viewDir.x)},${fmt(viewDir.y)},${fmt(viewDir.z)}`
   ].join('|');
 }
 
 /**
- * 1 面分の深度データ（traverse は呼び出し側で間引き）。
+ * 1 面分の全管路深度レンジ（初回固定スナップショット用）。
  */
 export function buildViewDepthData({
   scene,
   cameraPosition,
   viewDir,
-  distance,
-  focusPoint
+  distance
 }) {
   const { sceneLimits, pipeLimits } = computeDepthRangesFromScene(
     scene,
     cameraPosition,
     viewDir
   );
-  const focusDepth = focusPoint
-    ? depthAlongView(focusPoint, cameraPosition, viewDir)
-    : null;
-  const displayLimits = {
-    min: pipeLimits.min,
-    max: capDepthMax(sceneLimits.max, distance)
-  };
-  const sliderLimits = buildSliderDepthLimits(pipeLimits, focusDepth, distance);
+  const depthLimits = buildPipeDepthLimits(pipeLimits, sceneLimits, distance);
 
   return {
     sceneLimits,
     pipeLimits,
-    displayLimits,
-    sliderLimits,
-    focusDepth
+    depthLimits
   };
-}
-
-/**
- * 「視野範囲」OFF 時 UI 用の最小〜最大（m）。
- * - 視野 OFF … frozenLimits をそのまま表示（固定）
- * - 視野 ON … 最小 = 選択管路重心深度、最大 = 管路奥側（キャップ済み）
- */
-export function buildDepthLimitsForDisplay(
-  depthFocusEnabled,
-  displayLimits,
-  focusDepth,
-  frozenLimits
-) {
-  if (!depthFocusEnabled && frozenLimits) {
-    return { min: frozenLimits.min, max: frozenLimits.max };
-  }
-  if (depthFocusEnabled && Number.isFinite(focusDepth)) {
-    return {
-      min: focusDepth,
-      max: displayLimits.max
-    };
-  }
-  return { min: displayLimits.min, max: displayLimits.max };
 }
 
 /**
  * サブビュー正射カメラの near / far。
  */
 export function resolveNearFar({
-  sceneLimits,
-  sliderLimits,
+  depthLimits,
   rangeEnabled,
   rangeValues,
   depthFocusEnabled,
   focusDepth,
   fallbackDistance
 }) {
-  const sceneMin = sceneLimits.min;
-  const sceneMax = Math.max(sceneLimits.max, sceneMin + DEPTH_MIN_SPAN);
+  const sceneMin = depthLimits.min;
+  const sceneMax = Math.max(depthLimits.max, sceneMin + DEPTH_MIN_SPAN);
   const fallbackFar = Math.max(2000, (fallbackDistance || 60) * 40);
 
   if (rangeEnabled && rangeValues) {
-    const lo = sliderLimits?.min ?? sceneMin;
-    const hi = sliderLimits?.max ?? sceneMax;
+    const lo = sceneMin;
+    const hi = sceneMax;
     const minVal = THREE.MathUtils.clamp(rangeValues.min, lo, hi - DEPTH_MIN_SPAN);
     const maxVal = THREE.MathUtils.clamp(rangeValues.max, minVal + DEPTH_MIN_SPAN, hi);
     const near = Math.max(DEPTH_NEAR_MARGIN, minVal);
