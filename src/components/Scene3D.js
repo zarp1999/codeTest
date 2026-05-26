@@ -483,6 +483,88 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     controlsRef.current.target.copy(camera.position.clone().add(offsetWorld));
   };
 
+  /** ホイールズームの移動量倍率（Shift・高度スケール込み） */
+  const getWheelZoomMoveScale = (camera) => {
+    const base = keysPressed.current['shift']
+      ? SCENE3D_CONFIG.controls.zoomSpeed.slow
+      : SCENE3D_CONFIG.controls.zoomSpeed.normal;
+    const { heightScaledZoom } = SCENE3D_CONFIG.controls;
+    if (!heightScaledZoom?.enabled) {
+      return base;
+    }
+    const height = Math.abs(camera.position.y);
+    const heightScale = THREE.MathUtils.clamp(
+      1 + height / heightScaledZoom.referenceHeight,
+      heightScaledZoom.minScale,
+      heightScaledZoom.maxScale,
+    );
+    return base * heightScale;
+  };
+
+  /** ホイールズームの移動方向（カーソル位置 or カメラ前方） */
+  const resolveWheelZoomDirection = (event, camera, controls) => {
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+    if (!SCENE3D_CONFIG.controls.zoomToCursor || !mountRef.current) {
+      return forward;
+    }
+
+    const rect = mountRef.current.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycasterRef.current.setFromCamera(ndc, camera);
+
+    const visibleMeshes = Object.values(objectsRef.current).filter((mesh) => mesh?.visible);
+    const intersects = raycasterRef.current.intersectObjects(visibleMeshes, false);
+
+    let targetPoint;
+    if (intersects.length > 0) {
+      targetPoint = intersects[0].point;
+    } else if (controls) {
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(forward, controls.target);
+      targetPoint = new THREE.Vector3();
+      if (!raycasterRef.current.ray.intersectPlane(plane, targetPoint)) {
+        return forward;
+      }
+    } else {
+      return forward;
+    }
+
+    const direction = targetPoint.clone().sub(camera.position);
+    if (direction.lengthSq() < 1e-12) {
+      return forward;
+    }
+    return direction.normalize();
+  };
+
+  /** メインビューのホイールズーム（カメラ位置移動＋target追従） */
+  const applyMainViewWheelZoom = (event) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls || !mountRef.current) return false;
+
+    const { wheelZoom } = SCENE3D_CONFIG.controls;
+    const baseMove = wheelZoom?.baseMove ?? 0.5;
+    const deltaScale = wheelZoom?.deltaScale ?? 0.01;
+    const moveAmount = baseMove * getWheelZoomMoveScale(camera) * (-event.deltaY) * deltaScale;
+    if (!Number.isFinite(moveAmount) || Math.abs(moveAmount) < 1e-9) {
+      return false;
+    }
+
+    const direction = resolveWheelZoomDirection(event, camera, controls);
+    camera.position.addScaledVector(direction, moveAmount);
+    repositionTargetUsingOffset(camera);
+    updateTargetOffsetFromCamera(camera);
+    updateCameraInfoFromCamera(camera);
+    syncCamerasFromActive(camera);
+    if (camera.isOrthographicCamera) {
+      updateOrthographicFrustum(camera);
+    }
+    scheduleCameraPositionSendRef.current?.();
+    return true;
+  };
+
   /**
    * 透視カメラ <-> 正射カメラをトグル切替
    * - 両カメラの状態を同期し、関連コンポーネントへも通知
@@ -1626,15 +1708,22 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   };
 
   const handleMouseWheel = (event) => {
-    if (!showSubViewsRef.current || !subViewPanelRef.current || !mountRef.current) return;
-    const rect = mountRef.current.getBoundingClientRect();
-    const handled = subViewPanelRef.current.handleWheel({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rect,
-      deltaY: event.deltaY
-    });
-    if (handled) {
+    if (showSubViewsRef.current && subViewPanelRef.current && mountRef.current) {
+      const rect = mountRef.current.getBoundingClientRect();
+      const handled = subViewPanelRef.current.handleWheel({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect,
+        deltaY: event.deltaY
+      });
+      if (handled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+
+    if (applyMainViewWheelZoom(event)) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -2228,7 +2317,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const controls = new OrbitControls(cameraRef.current, renderer.domElement);
     controls.enableDamping = false;
     // controls.dampingFactor = 0.05;
-    controls.enableZoom = true;
+    controls.enableZoom = false;
     controls.enablePan = true;
     controls.enableRotate = true;
 
@@ -2242,8 +2331,6 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     controls.minDistance = SCENE3D_CONFIG.controls.minDistance;
     controls.maxPolarAngle = SCENE3D_CONFIG.controls.maxPolarAngle;
     controls.minPolarAngle = SCENE3D_CONFIG.controls.minPolarAngle;
-    controls.zoomToCursor = SCENE3D_CONFIG.controls.zoomToCursor;
-
     // マウス操作の割当: 左クリック無効、右ドラッグ=回転、中クリック=ズーム
     controls.mouseButtons = {
       LEFT: null, // 左クリックを無効化
@@ -2253,7 +2340,6 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     // 操作速度を調整
     controls.rotateSpeed = SCENE3D_CONFIG.controls.rotateSpeed.slow;
-    controls.zoomSpeed = SCENE3D_CONFIG.controls.zoomSpeed.slow;
     controls.keyRotateSpeed = SCENE3D_CONFIG.controls.keyRotateSpeed;
     controlsRef.current = controls;
     updateTargetOffsetFromCamera(cameraRef.current);
@@ -2538,25 +2624,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       }
 
       // 左Shiftキーでマウス操作を低速化
-      const baseZoomSpeed = keysPressed.current['shift']
-        ? SCENE3D_CONFIG.controls.zoomSpeed.slow
-        : SCENE3D_CONFIG.controls.zoomSpeed.normal;
       if (keysPressed.current['shift']) {
         controls.rotateSpeed = SCENE3D_CONFIG.controls.rotateSpeed.slow;
       } else {
         controls.rotateSpeed = SCENE3D_CONFIG.controls.rotateSpeed.normal;
-      }
-      const { heightScaledZoom } = SCENE3D_CONFIG.controls;
-      if (heightScaledZoom?.enabled) {
-        const height = Math.abs(camera.position.y);
-        const scale = THREE.MathUtils.clamp(
-          1 + height / heightScaledZoom.referenceHeight,
-          heightScaledZoom.minScale,
-          heightScaledZoom.maxScale,
-        );
-        controls.zoomSpeed = baseZoomSpeed * scale;
-      } else {
-        controls.zoomSpeed = baseZoomSpeed;
       }
 
       // OrbitControlsの更新

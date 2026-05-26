@@ -109,7 +109,7 @@ const SCENE3D_CONFIG = Object.freeze({
       minPolarAngle: 0,
       /** 初期ターゲット位置 */
       initialTarget: { x: 0, y: 0, z: 0 },
-      /** ホイールズームをカーソル位置に向ける（OrbitControls.zoomToCursor） */
+      /** ホイールズームをカーソル位置の方向へ向ける */
       zoomToCursor: true,
       /** カメラ高度に応じてホイールズーム量をスケール */
       heightScaledZoom: {
@@ -118,6 +118,13 @@ const SCENE3D_CONFIG = Object.freeze({
         referenceHeight: 50,
         minScale: 1,
         maxScale: 20,
+      },
+      /** フリーカメラ用ホイールズーム（OrbitControlsのdollyは使わない） */
+      wheelZoom: {
+        /** ホイール1単位あたりの基準移動量(m) */
+        baseMove: 0.5,
+        /** deltaY を移動量へ換算する係数 */
+        deltaScale: 0.01,
       },
     },
     /**
