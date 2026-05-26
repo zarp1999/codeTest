@@ -183,6 +183,8 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   });
   /** 視野 OFF 時に固定する表示・クリップ用深度（面ごと） */
   const frozenDisplayLimitsRef = useRef({});
+  /** 視野 OFF + 視野範囲 ON 時に固定するスライダー操作レンジ（面ごと） */
+  const frozenSliderLimitsRef = useRef({});
   const depthFocusPrevRef = useRef(depthFocusEnabled);
   // animate ループから読むため React state を ref に同期
   const depthFocusEnabledRef = useRef(depthFocusEnabled);
@@ -199,6 +201,12 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       VIEW_DEFS.forEach((v) => {
         const live = depthLimitsRef.current[v.key] || { min: 0, max: 1000 };
         frozen[v.key] = { min: live.min, max: live.max };
+        if (depthRangeEnabledRef.current[v.key]) {
+          const slider = sliderLimitsRef.current[v.key];
+          if (slider) {
+            frozenSliderLimitsRef.current[v.key] = { min: slider.min, max: slider.max };
+          }
+        }
       });
       frozenDisplayLimitsRef.current = frozen;
       setDepthLimitsDisplay({
@@ -211,6 +219,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
 
     if (!wasEnabled && depthFocusEnabled) {
       frozenDisplayLimitsRef.current = {};
+      frozenSliderLimitsRef.current = {};
       const next = {};
       VIEW_DEFS.forEach((v) => {
         const live = depthLimitsRef.current[v.key] || { min: 0, max: 1000 };
@@ -510,15 +519,52 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
 
         // --- 奥行きクリップ（near / far）---
         _viewDirScratch.copy(state.center).sub(camera.position).normalize();
+        const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
+        const frozenDisplayForView = frozenDisplayLimitsRef.current[viewDef.key];
+
+        // 視野 OFF かつ表示固定済み: 管路選択・追従で深度を再計算しない
+        if (focusOff && !rangeEnabled && frozenDisplayForView) {
+          const { near, far } = resolveNearFar({
+            sceneLimits: frozenDisplayForView,
+            sliderLimits: frozenDisplayForView,
+            rangeEnabled: false,
+            rangeValues: null,
+            depthFocusEnabled: false,
+            focusDepth: null,
+            fallbackDistance: distance
+          });
+          camera.left = -halfSize * aspect;
+          camera.right = halfSize * aspect;
+          camera.top = halfSize;
+          camera.bottom = -halfSize;
+          camera.near = near;
+          camera.far = far;
+          camera.updateProjectionMatrix();
+          renderer.setViewport(x, 0, width, subHeight);
+          renderer.setScissor(x, 0, width, subHeight);
+          renderer.setScissorTest(true);
+          renderer.clearDepth();
+          renderer.render(scene, camera);
+          if (subViewAxesRef.current && subViewOverlaySceneRef.current) {
+            const axisSize = Math.max(2, halfSize * 0.45);
+            subViewAxesRef.current.position.copy(state.center);
+            subViewAxesRef.current.scale.setScalar(axisSize);
+            renderer.clearDepth();
+            renderer.render(subViewOverlaySceneRef.current, camera);
+          }
+          return;
+        }
+
+        const depthFocusOn = depthFocusEnabledRef.current;
         const signature = makeDepthCacheSignature({
           center: state.center,
           distance,
           directionMode: mode,
           cameraPosition: camera.position,
           viewDir: _viewDirScratch,
-          selectedFeatureId
+          selectedFeatureId: depthFocusOn ? selectedFeatureId : null
         });
-        const focusPoint = selectedMesh
+        const focusPoint = depthFocusOn && selectedMesh
           ? getMeshWorldCenter(selectedMesh, state.center)
           : null;
         const { data: depthData, fromCache } = getViewDepthCached(
@@ -536,11 +582,23 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
           depthLimitsUpdated = true;
         }
 
-        depthLimitsRef.current[viewDef.key] = depthData.displayLimits;
-        focusDepthByViewRef.current[viewDef.key] = depthData.focusDepth;
-        sliderLimitsRef.current[viewDef.key] = depthData.sliderLimits;
+        let sliderLimitsForView = depthData.sliderLimits;
+        if (focusOff && rangeEnabled) {
+          if (!frozenSliderLimitsRef.current[viewDef.key]) {
+            frozenSliderLimitsRef.current[viewDef.key] = {
+              min: depthData.sliderLimits.min,
+              max: depthData.sliderLimits.max
+            };
+          }
+          sliderLimitsForView = frozenSliderLimitsRef.current[viewDef.key];
+        }
 
-        const rangeEnabled = depthRangeEnabledRef.current[viewDef.key];
+        if (!(focusOff && !rangeEnabled && frozenDisplayLimitsRef.current[viewDef.key])) {
+          depthLimitsRef.current[viewDef.key] = depthData.displayLimits;
+          focusDepthByViewRef.current[viewDef.key] = depthData.focusDepth;
+          sliderLimitsRef.current[viewDef.key] = sliderLimitsForView;
+        }
+
         if (focusOff && !rangeEnabled && !frozenDisplayLimitsRef.current[viewDef.key]) {
           frozenDisplayLimitsRef.current[viewDef.key] = {
             min: depthData.displayLimits.min,
@@ -549,17 +607,22 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
           frozenDisplayInitialized = true;
         }
 
-        const frozenLimits = frozenDisplayLimitsRef.current[viewDef.key];
-        const sceneLimitsForClip = focusOff && !rangeEnabled && frozenLimits
-          ? frozenLimits
+        const sceneLimitsForClip = focusOff && !rangeEnabled && frozenDisplayLimitsRef.current[viewDef.key]
+          ? frozenDisplayLimitsRef.current[viewDef.key]
           : depthData.displayLimits;
         const prevDirectionMode = directionModePrevRef.current[viewDef.key];
         if (prevDirectionMode !== mode) {
           directionModePrevRef.current[viewDef.key] = mode;
+          if (focusOff && !rangeEnabled) {
+            delete frozenDisplayLimitsRef.current[viewDef.key];
+          }
+          if (focusOff && rangeEnabled) {
+            delete frozenSliderLimitsRef.current[viewDef.key];
+          }
           if (rangeEnabled) {
             const initValues = makeInitialDepthRangeValues(
-              depthData.sliderLimits,
-              depthData.focusDepth,
+              sliderLimitsForView,
+              depthFocusOn ? depthData.focusDepth : null,
               depthFocusEnabledRef.current
             );
             depthRangeValuesRef.current[viewDef.key] = initValues;
@@ -570,11 +633,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         const rangeValues = depthRangeValuesRef.current[viewDef.key];
         const { near, far } = resolveNearFar({
           sceneLimits: sceneLimitsForClip,
-          sliderLimits: depthData.sliderLimits,
+          sliderLimits: sliderLimitsForView,
           rangeEnabled,
           rangeValues,
           depthFocusEnabled: depthFocusEnabledRef.current,
-          focusDepth: depthData.focusDepth,
+          focusDepth: depthFocusOn ? depthData.focusDepth : null,
           fallbackDistance: distance
         });
 
@@ -623,7 +686,6 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         const nextDisplay = createDefaultDepthRangeValues();
         VIEW_DEFS.forEach((v) => {
           const frozen = frozenDisplayLimitsRef.current[v.key]
-            || depthLimitsRef.current[v.key]
             || { min: 0, max: 1000 };
           nextDisplay[v.key] = { min: frozen.min, max: frozen.max };
         });
@@ -652,15 +714,19 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   const handleToggleDepthRange = (viewKey, enabled) => {
     setDepthRangeEnabled((prev) => ({ ...prev, [viewKey]: enabled }));
     if (!enabled) {
+      delete frozenSliderLimitsRef.current[viewKey];
+      const frozen = frozenDisplayLimitsRef.current[viewKey];
       const live = depthLimitsRef.current[viewKey] || { min: 0, max: 1000 };
       const focusDepth = focusDepthByViewRef.current[viewKey];
-      const frozen = frozenDisplayLimitsRef.current[viewKey];
       const limits = buildDepthLimitsForDisplay(
         depthFocusEnabledRef.current,
         live,
         focusDepth,
         depthFocusEnabledRef.current ? null : frozen
       );
+      if (!depthFocusEnabledRef.current && !frozen) {
+        frozenDisplayLimitsRef.current[viewKey] = { min: limits.min, max: limits.max };
+      }
       setDepthLimitsDisplay((prev) => ({
         ...prev,
         [viewKey]: { min: limits.min, max: limits.max }
@@ -670,7 +736,12 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       const limits = sliderLimitsRef.current[viewKey]
         || depthLimitsRef.current[viewKey]
         || { min: 0, max: 1000 };
-      const focusDepth = focusDepthByViewRef.current[viewKey];
+      if (!depthFocusEnabledRef.current) {
+        frozenSliderLimitsRef.current[viewKey] = { min: limits.min, max: limits.max };
+      }
+      const focusDepth = depthFocusEnabledRef.current
+        ? focusDepthByViewRef.current[viewKey]
+        : null;
       const initValues = makeInitialDepthRangeValues(
         limits,
         focusDepth,
@@ -701,6 +772,8 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
     setDirectionModeMap((prev) => {
       if (prev[viewKey] === mode) return prev;
       depthCacheByViewRef.current[viewKey] = null;
+      delete frozenDisplayLimitsRef.current[viewKey];
+      delete frozenSliderLimitsRef.current[viewKey];
       return { ...prev, [viewKey]: mode };
     });
   };
@@ -747,7 +820,8 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                   <span>視野範囲</span>
                 </label>
                 {depthRangeEnabled[view.key] ? (() => {
-                  const limits = sliderLimitsRef.current[view.key]
+                  const limits = (!depthFocusEnabled && frozenSliderLimitsRef.current[view.key])
+                    || sliderLimitsRef.current[view.key]
                     || depthLimitsRef.current[view.key]
                     || { min: 0, max: 1000 };
                   const values = depthRangeValues[view.key];
@@ -763,9 +837,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                     />
                   );
                 })() : (() => {
-                  const limits = depthLimitsDisplay[view.key]
-                    || depthLimitsRef.current[view.key]
-                    || { min: 0, max: 1000 };
+                  const limits = depthFocusEnabled
+                    ? (depthLimitsDisplay[view.key]
+                      || depthLimitsRef.current[view.key]
+                      || { min: 0, max: 1000 })
+                    : (depthLimitsDisplay[view.key] || { min: 0, max: 1000 });
                   return (
                     <span className="subview-depth-limits-hint">
                       {`最小(${limits.min.toFixed(1)})〜最大(${limits.max.toFixed(1)})`}
