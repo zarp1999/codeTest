@@ -1473,13 +1473,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   };
 
   /**
-   * メッシュ中心を画面中央に据え、現在の視線方向を保ったまま固定距離でカメラを再配置する。
+   * メッシュ中心へカメラを再配置する。
+   * alignOrientation=true のときは中心を向き、false のときは現在の視線方向を保つ。
    *
    * @param {THREE.Object3D} mesh フォーカス対象
-   * @param {{ distance?: number, selectMesh?: boolean }} [options]
+   * @param {{ distance?: number, selectMesh?: boolean, alignOrientation?: boolean }} [options]
    * @returns {boolean}
    */
-  const focusCameraOnMesh = (mesh, { distance, selectMesh = false } = {}) => {
+  const focusCameraOnMesh = (mesh, { distance, selectMesh = false, alignOrientation = false } = {}) => {
     const activeCamera = cameraRef.current;
     const controls = controlsRef.current;
     if (!mesh || !activeCamera || !controls) return false;
@@ -1506,7 +1507,23 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       return false;
     }
 
-    activeCamera.position.copy(center.clone().sub(forward.multiplyScalar(focusDistance)));
+    if (alignOrientation) {
+      const approach = center.clone().sub(activeCamera.position);
+      const minApproachSq = SCENE3D_CONFIG.other.minDistance * SCENE3D_CONFIG.other.minDistance;
+      if (approach.lengthSq() < minApproachSq) {
+        approach.copy(forward).negate();
+      }
+      approach.normalize();
+      activeCamera.position.copy(center.clone().sub(approach.multiplyScalar(focusDistance)));
+      activeCamera.lookAt(center);
+      activeCamera.updateMatrixWorld();
+      const euler = getEulerYXZFromCamera(activeCamera);
+      rightDragYawPitchRef.current.yaw = euler.y;
+      rightDragYawPitchRef.current.pitch = euler.x;
+    } else {
+      activeCamera.position.copy(center.clone().sub(forward.multiplyScalar(focusDistance)));
+    }
+
     controls.target.copy(center);
     controls.update();
 
@@ -1700,7 +1717,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     if (focusCameraOnMesh(clickedObject, {
       distance: SCENE3D_CONFIG.camera.pipelineDblClickFocusDistance,
-      selectMesh: true
+      selectMesh: true,
+      alignOrientation: true,
     })) {
       event.preventDefault();
       event.stopPropagation();
