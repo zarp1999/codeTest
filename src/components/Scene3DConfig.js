@@ -109,6 +109,16 @@ const SCENE3D_CONFIG = Object.freeze({
       minPolarAngle: 0,
       /** 初期ターゲット位置 */
       initialTarget: { x: 0, y: 0, z: 0 },
+      /** ホイールズームをカーソル位置に向ける（OrbitControls.zoomToCursor） */
+      zoomToCursor: true,
+      /** カメラ高度に応じてホイールズーム量をスケール */
+      heightScaledZoom: {
+        enabled: true,
+        /** この高度(m)ごとにズーム量が1段階増える基準 */
+        referenceHeight: 50,
+        minScale: 1,
+        maxScale: 20,
+      },
     },
     /**
      * カメラ移動設定。

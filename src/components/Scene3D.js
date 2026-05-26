@@ -2242,6 +2242,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     controls.minDistance = SCENE3D_CONFIG.controls.minDistance;
     controls.maxPolarAngle = SCENE3D_CONFIG.controls.maxPolarAngle;
     controls.minPolarAngle = SCENE3D_CONFIG.controls.minPolarAngle;
+    controls.zoomToCursor = SCENE3D_CONFIG.controls.zoomToCursor;
 
     // マウス操作の割当: 左クリック無効、右ドラッグ=回転、中クリック=ズーム
     controls.mouseButtons = {
@@ -2537,12 +2538,25 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       }
 
       // 左Shiftキーでマウス操作を低速化
+      const baseZoomSpeed = keysPressed.current['shift']
+        ? SCENE3D_CONFIG.controls.zoomSpeed.slow
+        : SCENE3D_CONFIG.controls.zoomSpeed.normal;
       if (keysPressed.current['shift']) {
         controls.rotateSpeed = SCENE3D_CONFIG.controls.rotateSpeed.slow;
-        controls.zoomSpeed = SCENE3D_CONFIG.controls.zoomSpeed.slow;
       } else {
         controls.rotateSpeed = SCENE3D_CONFIG.controls.rotateSpeed.normal;
-        controls.zoomSpeed = SCENE3D_CONFIG.controls.zoomSpeed.normal;
+      }
+      const { heightScaledZoom } = SCENE3D_CONFIG.controls;
+      if (heightScaledZoom?.enabled) {
+        const height = Math.abs(camera.position.y);
+        const scale = THREE.MathUtils.clamp(
+          1 + height / heightScaledZoom.referenceHeight,
+          heightScaledZoom.minScale,
+          heightScaledZoom.maxScale,
+        );
+        controls.zoomSpeed = baseZoomSpeed * scale;
+      } else {
+        controls.zoomSpeed = baseZoomSpeed;
       }
 
       // OrbitControlsの更新
