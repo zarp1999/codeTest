@@ -3,8 +3,8 @@
  *
  * 深度レンジ（最小〜最大）:
  * - サブビュー初回表示時に全管路範囲で固定（追従・管路選択では変えない）
- * - トップ「視野」ON … 表示レンジは固定のまま near のみ選択管路重心深度へ
- * - 下部「視野範囲」ON … スライダー幅は固定、視野 ON 時は左ハンドルのみ重心深度へ追従
+ * - トップ「視野」ON … 表示レンジは固定、初期 near は選択管路重心深度（左ハンドルは手動調整可）
+ * - 下部「視野範囲」ON … スライダー幅は固定、視野 ON 時は未操作時のみ左ハンドルが重心深度へ追従
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -144,11 +144,15 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
   const depthFocusEnabledRef = useRef(depthFocusEnabled);
   const depthRangeEnabledRef = useRef(depthRangeEnabled);
   const depthRangeValuesRef = useRef(depthRangeValues);
+  /** 視野 ON 時に左ハンドルを手動調整済みか（面ごと） */
+  const manualNearOverrideRef = useRef({});
+  const lastSelectedFeatureIdRef = useRef(null);
 
   useEffect(() => {
     depthFocusEnabledRef.current = depthFocusEnabled;
     const patch = {};
     VIEW_DEFS.forEach((v) => {
+      manualNearOverrideRef.current[v.key] = false;
       if (!depthRangeEnabledRef.current[v.key]) return;
       const limits = frozenDepthLimitsRef.current[v.key];
       if (!limits) return;
@@ -416,6 +420,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       lastFrameRef.current.subTop = canvasHeight - subHeight;
 
       const depthFocusOn = depthFocusEnabledRef.current;
+      const selectedFeatureId = selectedMesh?.userData?.objectData?.feature_id
+        ?? selectedMesh?.uuid
+        ?? null;
+      const selectionChanged = selectedFeatureId !== lastSelectedFeatureIdRef.current;
+      lastSelectedFeatureIdRef.current = selectedFeatureId;
       let frozenDisplayInitialized = false;
       const depthRangeResyncPatch = {};
 
@@ -494,8 +503,11 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
         }
 
         let rangeValues = depthRangeValuesRef.current[viewDef.key];
-        if (rangeEnabled) {
-          if (depthFocusOn && Number.isFinite(focusDepth)) {
+        if (rangeEnabled && depthFocusOn && Number.isFinite(focusDepth)) {
+          if (selectionChanged) {
+            manualNearOverrideRef.current[viewDef.key] = false;
+          }
+          if (!manualNearOverrideRef.current[viewDef.key]) {
             const autoMin = clampRangeMin(focusDepth, depthLimits);
             if (!rangeValues || Math.abs(rangeValues.min - autoMin) > 0.001) {
               rangeValues = {
@@ -558,6 +570,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       return;
     }
 
+    manualNearOverrideRef.current[viewKey] = false;
     const focus = depthFocusEnabledRef.current
       ? focusDepthByViewRef.current[viewKey]
       : null;
@@ -573,6 +586,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
     const limits = frozenDepthLimitsRef.current[viewKey] || DEFAULT_DEPTH_LIMITS;
     const clampedMin = THREE.MathUtils.clamp(min, limits.min, limits.max - DEPTH_MIN_SPAN);
     const clampedMax = THREE.MathUtils.clamp(max, clampedMin + DEPTH_MIN_SPAN, limits.max);
+    manualNearOverrideRef.current[viewKey] = true;
     setDepthRangeValues((prev) => ({
       ...prev,
       [viewKey]: { min: clampedMin, max: clampedMax }
@@ -584,6 +598,7 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       if (prev[viewKey] === mode) return prev;
       depthCacheByViewRef.current[viewKey] = null;
       delete frozenDepthLimitsRef.current[viewKey];
+      delete manualNearOverrideRef.current[viewKey];
       return { ...prev, [viewKey]: mode };
     });
   };
