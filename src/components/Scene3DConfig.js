@@ -126,6 +126,13 @@ const SCENE3D_CONFIG = Object.freeze({
         /** deltaY を移動量へ換算する係数 */
         deltaScale: 0.01,
       },
+      /** Orbital Control（視線上の点を中心に30°刻みで回転） */
+      orbitalControl: {
+        /** 回転中心までの距離（m）— カメラ視線上の点 */
+        distance: 5,
+        /** 1クリックあたりの回転角（度） */
+        stepDegrees: 30,
+      },
     },
     /**
      * カメラ移動設定。

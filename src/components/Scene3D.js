@@ -120,6 +120,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const isRightDraggingRef = useRef(false);
   const rightDragLastPosRef = useRef({ x: 0, y: 0 });
   const rightDragYawPitchRef = useRef({ yaw: 0, pitch: 0, targetDistance: 10 });
+  const orbitForwardScratchRef = useRef(new THREE.Vector3());
+  const orbitPivotScratchRef = useRef(new THREE.Vector3());
+  const orbitOffsetScratchRef = useRef(new THREE.Vector3());
+  const orbitRightScratchRef = useRef(new THREE.Vector3());
+  const orbitWorldUpScratchRef = useRef(new THREE.Vector3(0, 1, 0));
 
   // 4キー（断面に正対）
   const faceSectionSideSignRef = useRef(1);
@@ -172,6 +177,78 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     // 次回の右ドラッグ開始でジャンプしないよう内部状態も同期
     rightDragYawPitchRef.current.yaw = eulerYXZ.y;
     rightDragYawPitchRef.current.pitch = eulerYXZ.x;
+  };
+
+  /**
+   * 視線上の規定距離の点を中心に、カメラを一定角度だけ軌道回転させる
+   * @param {'pitchDown'|'pitchUp'|'yawCW'|'yawCCW'} direction
+   */
+  const applyOrbitalControlStep = (direction) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+
+    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
+    const distance = orbitalCfg?.distance ?? 5;
+    const stepRad = THREE.MathUtils.degToRad(orbitalCfg?.stepDegrees ?? 30);
+    const pitchLimit = Math.PI / 2 - 0.01;
+
+    const forward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    if (forward.lengthSq() < 1e-12) return;
+    forward.normalize();
+
+    const pivot = orbitPivotScratchRef.current.copy(camera.position).addScaledVector(forward, distance);
+    const offset = orbitOffsetScratchRef.current.copy(camera.position).sub(pivot);
+    if (offset.lengthSq() < 1e-8) return;
+
+    const right = orbitRightScratchRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const worldUp = orbitWorldUpScratchRef.current.set(0, 1, 0);
+
+    switch (direction) {
+      case 'pitchDown':
+        offset.applyAxisAngle(right, -stepRad);
+        break;
+      case 'pitchUp':
+        offset.applyAxisAngle(right, stepRad);
+        break;
+      case 'yawCW':
+        offset.applyAxisAngle(worldUp, -stepRad);
+        break;
+      case 'yawCCW':
+        offset.applyAxisAngle(worldUp, stepRad);
+        break;
+      default:
+        return;
+    }
+
+    camera.position.copy(pivot).add(offset);
+    camera.lookAt(pivot);
+    camera.updateMatrixWorld();
+
+    let euler = getEulerYXZFromCamera(camera);
+    if (euler.x > pitchLimit || euler.x < -pitchLimit) {
+      euler.x = THREE.MathUtils.clamp(euler.x, -pitchLimit, pitchLimit);
+      applyEulerYXZToCamera(camera, euler);
+      const clampedForward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+      camera.position.copy(pivot).addScaledVector(clampedForward, -distance);
+      camera.lookAt(pivot);
+      camera.updateMatrixWorld();
+      euler = getEulerYXZFromCamera(camera);
+    } else {
+      rightDragYawPitchRef.current.yaw = euler.y;
+      rightDragYawPitchRef.current.pitch = euler.x;
+    }
+
+    rightDragYawPitchRef.current.targetDistance = distance;
+    controls.target.copy(pivot);
+    controls.update();
+    updateTargetOffsetFromCamera(camera);
+    syncCamerasFromActive(camera);
+    updateCameraInfoFromCamera(camera);
+    if (camera.isOrthographicCamera) {
+      updateOrthographicFrustum(camera);
+    }
+    scheduleCameraPositionSendRef.current?.();
   };
 
   /**
@@ -1079,7 +1156,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     // 管路情報表示エリア内のクリックは無視
     if (event.target.closest('.pipeline-info-display') ||
       event.target.closest('.pipeline-info-text') ||
-      event.target.closest('.camera-info-container')) {
+      event.target.closest('.camera-info-container') ||
+      event.target.closest('.orbital-control-pad')) {
       return;
     }
 
@@ -1562,7 +1640,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     // 管路情報表示エリア内のクリックは無視
     if (event.target.closest('.pipeline-info-display') ||
       event.target.closest('.pipeline-info-text') ||
-      event.target.closest('.camera-info-container')) {
+      event.target.closest('.camera-info-container') ||
+      event.target.closest('.orbital-control-pad')) {
       return;
     }
 
@@ -1693,7 +1772,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     if (event.target.closest('.pipeline-info-display')
       || event.target.closest('.pipeline-info-text')
-      || event.target.closest('.camera-info-container')) {
+      || event.target.closest('.camera-info-container')
+      || event.target.closest('.orbital-control-pad')) {
       return;
     }
     if (event.target !== rendererRef.current?.domElement) return;
@@ -4350,6 +4430,46 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         </div>
       )}
 
+      {showGuides && (
+        <div className="orbital-control-pad" role="group" aria-label="Orbital Control">
+          <div className="orbital-control-title">Orbital Control</div>
+          <div className="orbital-control-grid">
+            <button
+              type="button"
+              className="orbital-control-button orbital-control-up"
+              title="見下ろし（30°）"
+              onClick={() => applyOrbitalControlStep('pitchDown')}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="orbital-control-button orbital-control-left"
+              title="時計回り（30°）"
+              onClick={() => applyOrbitalControlStep('yawCW')}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              className="orbital-control-button orbital-control-right"
+              title="反時計回り（30°）"
+              onClick={() => applyOrbitalControlStep('yawCCW')}
+            >
+              →
+            </button>
+            <button
+              type="button"
+              className="orbital-control-button orbital-control-down"
+              title="見上げ（30°）"
+              onClick={() => applyOrbitalControlStep('pitchUp')}
+            >
+              ↓
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 左下のカメラ情報 */}
       {showGuides && (
         <div className="camera-info-container">
@@ -4365,7 +4485,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             I:チルト水平 T:チルト真下 R:チルト水平・高さ初期値 F:高さ重心<br />
             U:パン重心 J:位置重心 H:重心向き後進 G:重心向き前進 K:重心真下<br />
             M:自己位置をサーバーへ送信（操作終了時は自動送信）<br />
-            WASDQE/矢印・ホイールズーム等の操作終了後、約0.4秒で自己位置を自動送信
+            WASDQE/矢印・ホイールズーム等の操作終了後、約0.4秒で自己位置を自動送信<br />
+            Orbital Control: 視線上5mの点を中心に30°刻み（↑見下ろし ↓見上げ ←時計回り →反時計回り）
             {enableCrossSectionMode && <><br />4:断面に正対</>}
           </div>
         </div>
