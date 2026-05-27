@@ -19,6 +19,7 @@ import CameraBookmarkPanel from './CameraBookmarkPanel';
 import EquipmentSearchPanel from './EquipmentSearchPanel';
 import EquipmentBookmarkPanel from './EquipmentBookmarkPanel';
 import AxisDirectionHud from './AxisDirectionHud';
+import { OrbitalControlController, OrbitalControlPad } from './OrbitalControl';
 import SubViewPanel from './SubViewPanel';
 import createCityObjects, { isPipeObject } from './Geometry.js';
 import createQuadTreeNodes from './3D/QuadTree.js';
@@ -120,12 +121,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const isRightDraggingRef = useRef(false);
   const rightDragLastPosRef = useRef({ x: 0, y: 0 });
   const rightDragYawPitchRef = useRef({ yaw: 0, pitch: 0, targetDistance: 10 });
-  const orbitForwardScratchRef = useRef(new THREE.Vector3());
-  const orbitPivotScratchRef = useRef(new THREE.Vector3());
-  const orbitOffsetScratchRef = useRef(new THREE.Vector3());
-  const orbitRightScratchRef = useRef(new THREE.Vector3());
-  const orbitWorldUpScratchRef = useRef(new THREE.Vector3(0, 1, 0));
-  const orbitalAnimRef = useRef(null);
+  const orbitalControllerRef = useRef(null);
+  if (!orbitalControllerRef.current) {
+    orbitalControllerRef.current = new OrbitalControlController();
+  }
+  const [orbitalAnimating, setOrbitalAnimating] = useState(false);
 
   // 4キー（断面に正対）
   const faceSectionSideSignRef = useRef(1);
@@ -180,174 +180,46 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     rightDragYawPitchRef.current.pitch = eulerYXZ.x;
   };
 
-  const easeOutCubic = (t) => 1 - (1 - t) ** 3;
-
-  /**
-   * 視線上の回転中心（OrbitControls.target）を解決する
-   * @returns {{ pivot: THREE.Vector3, distance: number } | null}
-   */
-  const resolveOrbitalPivot = (camera, controls) => {
-    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
-    const fallbackDistance = orbitalCfg?.distance ?? 5;
-    const minDist = SCENE3D_CONFIG.other.minDistance ?? 0.1;
-
-    if (controls?.target) {
-      const pivot = orbitPivotScratchRef.current.copy(controls.target);
-      const dist = camera.position.distanceTo(pivot);
-      if (Number.isFinite(dist) && dist >= minDist) {
-        return { pivot: pivot.clone(), distance: dist };
-      }
-    }
-
-    const forward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    if (forward.lengthSq() < 1e-12) return null;
-    forward.normalize();
-
-    const pivot = orbitPivotScratchRef.current.copy(camera.position).addScaledVector(forward, fallbackDistance);
-    return { pivot: pivot.clone(), distance: fallbackDistance };
-  };
-
-  /**
-   * pivot を中心に点を回転（pivot + R(position - pivot)）
-   */
-  const rotatePointAroundPivot = (position, pivot, axis, angleRad) => {
-    orbitOffsetScratchRef.current.copy(position).sub(pivot);
-    orbitOffsetScratchRef.current.applyAxisAngle(axis, angleRad);
-    return position.copy(pivot).add(orbitOffsetScratchRef.current);
-  };
-
-  /**
-   * 視線上の点（target）を中心に、終了時の offset を計算する
-   * @returns {{ pivot: THREE.Vector3, startOffset: THREE.Vector3, endOffset: THREE.Vector3, distance: number } | null}
-   */
-  const computeOrbitalStepOffsets = (direction, camera, controls) => {
-    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
-    const stepRad = THREE.MathUtils.degToRad(orbitalCfg?.stepDegrees ?? 30);
-
-    const pivotInfo = resolveOrbitalPivot(camera, controls);
-    if (!pivotInfo) return null;
-
-    const { pivot, distance } = pivotInfo;
-    const startOffset = new THREE.Vector3().copy(camera.position).sub(pivot);
-    if (startOffset.lengthSq() < 1e-8) return null;
-
-    const endPosition = camera.position.clone();
-    const right = orbitRightScratchRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-    const worldUp = orbitWorldUpScratchRef.current.set(0, 1, 0);
-
-    switch (direction) {
-      case 'pitchDown':
-        rotatePointAroundPivot(endPosition, pivot, right, -stepRad);
-        break;
-      case 'pitchUp':
-        rotatePointAroundPivot(endPosition, pivot, right, stepRad);
-        break;
-      case 'yawCW':
-        rotatePointAroundPivot(endPosition, pivot, worldUp, -stepRad);
-        break;
-      case 'yawCCW':
-        rotatePointAroundPivot(endPosition, pivot, worldUp, stepRad);
-        break;
-      default:
-        return null;
-    }
-
-    const endOffset = endPosition.sub(pivot);
-    return { pivot, startOffset, endOffset, distance };
-  };
-
-  /**
-   * Orbital 回転完了時のカメラ姿勢を確定（pitchクランプ・同期）
-   */
-  const finalizeOrbitalCameraState = (camera, controls, pivot, distance) => {
-    const pitchLimit = Math.PI / 2 - 0.01;
-
-    camera.lookAt(pivot);
-    camera.updateMatrixWorld();
-
-    let euler = getEulerYXZFromCamera(camera);
-    if (euler.x > pitchLimit || euler.x < -pitchLimit) {
-      euler.x = THREE.MathUtils.clamp(euler.x, -pitchLimit, pitchLimit);
-      applyEulerYXZToCamera(camera, euler);
-      const clampedForward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-      camera.position.copy(pivot).addScaledVector(clampedForward, -distance);
-      camera.lookAt(pivot);
-      camera.updateMatrixWorld();
-      euler = getEulerYXZFromCamera(camera);
-    } else {
-      rightDragYawPitchRef.current.yaw = euler.y;
-      rightDragYawPitchRef.current.pitch = euler.x;
-    }
-
-    rightDragYawPitchRef.current.targetDistance = distance;
-    controls.target.copy(pivot);
-    updateTargetOffsetFromCamera(camera);
-    syncCamerasFromActive(camera);
-    updateCameraInfoFromCamera(camera);
-    if (camera.isOrthographicCamera) {
-      updateOrthographicFrustum(camera);
-    }
-    previousCameraPosition.current.copy(camera.position);
-    previousCameraRotation.current.copy(camera.rotation);
-  };
-
-  /**
-   * Orbital Control 補間を1フレーム進める（animate ループから呼ぶ）
-   */
-  const tickOrbitalControlAnimation = (camera, controls) => {
-    const anim = orbitalAnimRef.current;
-    if (!anim?.active || !camera || !controls) return false;
-
-    const elapsed = performance.now() - anim.startTime;
-    const rawT = Math.min(1, elapsed / anim.durationMs);
-    const t = easeOutCubic(rawT);
-
-    orbitOffsetScratchRef.current.copy(anim.startOffset).lerp(anim.endOffset, t);
-    camera.position.copy(anim.pivot).add(orbitOffsetScratchRef.current);
-    camera.lookAt(anim.pivot);
-    camera.updateMatrixWorld();
-    controls.target.copy(anim.pivot);
-    syncCamerasFromActive(camera);
-    updateCameraInfoFromCamera(camera);
-    if (camera.isOrthographicCamera) {
-      updateOrthographicFrustum(camera);
-    }
-
-    if (rawT >= 1) {
-      camera.position.copy(anim.pivot).add(anim.endOffset);
-      finalizeOrbitalCameraState(camera, controls, anim.pivot, anim.distance);
-      orbitalAnimRef.current = null;
+  const getOrbitalControlCallbacks = () => ({
+    getEulerYXZFromCamera,
+    applyEulerYXZToCamera,
+    syncRightDragYawPitch: (yaw, pitch) => {
+      rightDragYawPitchRef.current.yaw = yaw;
+      rightDragYawPitchRef.current.pitch = pitch;
+    },
+    setRightDragTargetDistance: (distance) => {
+      rightDragYawPitchRef.current.targetDistance = distance;
+    },
+    updateTargetOffsetFromCamera,
+    syncCamerasFromActive,
+    updateCameraInfoFromCamera,
+    updateOrthographicFrustum,
+    syncPreviousCameraState: (camera) => {
+      previousCameraPosition.current.copy(camera.position);
+      previousCameraRotation.current.copy(camera.rotation);
+    },
+    onAnimationStart: () => {
+      setOrbitalAnimating(true);
+      localCameraControlActiveRef.current = true;
+    },
+    onAnimationEnd: () => {
+      setOrbitalAnimating(false);
       localCameraControlActiveRef.current = false;
       scheduleCameraPositionSendRef.current?.();
-    }
+    },
+  });
 
-    return true;
-  };
-
-  /**
-   * 視線上の規定距離の点を中心に、カメラを一定角度だけ軌道回転させる（lerp で補間）
-   * @param {'pitchDown'|'pitchUp'|'yawCW'|'yawCCW'} direction
-   */
-  const applyOrbitalControlStep = (direction) => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-    if (orbitalAnimRef.current?.active) return;
-
-    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
-    const step = computeOrbitalStepOffsets(direction, camera, controls);
-    if (!step) return;
-
-    orbitalAnimRef.current = {
-      active: true,
-      pivot: step.pivot,
-      startOffset: step.startOffset,
-      endOffset: step.endOffset,
-      distance: step.distance,
-      startTime: performance.now(),
-      durationMs: orbitalCfg?.durationMs ?? 300,
-    };
-    localCameraControlActiveRef.current = true;
+  const handleOrbitalControlStep = (direction) => {
+    orbitalControllerRef.current?.startStep(
+      direction,
+      cameraRef.current,
+      controlsRef.current,
+      {
+        orbitalCfg: SCENE3D_CONFIG.controls.orbitalControl,
+        minDist: SCENE3D_CONFIG.other.minDistance ?? 0.1,
+        callbacks: getOrbitalControlCallbacks(),
+      },
+    );
   };
 
   /**
@@ -2820,7 +2692,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         return;
       }
 
-      tickOrbitalControlAnimation(camera, controls);
+      orbitalControllerRef.current?.tick(camera, controls, {
+        callbacks: getOrbitalControlCallbacks(),
+      });
 
       // 左Shiftキーでマウス操作を低速化
       if (keysPressed.current['shift']) {
@@ -4532,43 +4406,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       )}
 
       {showGuides && (
-        <div className="orbital-control-pad" role="group" aria-label="Orbital Control">
-          <div className="orbital-control-title">Orbital Control</div>
-          <div className="orbital-control-grid">
-            <button
-              type="button"
-              className="orbital-control-button orbital-control-up"
-              title="見下ろし（30°）"
-              onClick={() => applyOrbitalControlStep('pitchDown')}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              className="orbital-control-button orbital-control-left"
-              title="時計回り（30°）"
-              onClick={() => applyOrbitalControlStep('yawCW')}
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              className="orbital-control-button orbital-control-right"
-              title="反時計回り（30°）"
-              onClick={() => applyOrbitalControlStep('yawCCW')}
-            >
-              →
-            </button>
-            <button
-              type="button"
-              className="orbital-control-button orbital-control-down"
-              title="見上げ（30°）"
-              onClick={() => applyOrbitalControlStep('pitchUp')}
-            >
-              ↓
-            </button>
-          </div>
-        </div>
+        <OrbitalControlPad
+          onStep={handleOrbitalControlStep}
+          stepDegrees={SCENE3D_CONFIG.controls.orbitalControl?.stepDegrees ?? 30}
+          disabled={orbitalAnimating}
+        />
       )}
 
       {/* 左下のカメラ情報 */}
