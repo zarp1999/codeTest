@@ -3,8 +3,8 @@
  *
  * 深度レンジ（最小〜最大）:
  * - サブビュー初回表示時に全管路範囲で固定（追従・管路選択では変えない）
- * - トップ「視野」ON … 表示レンジは固定、初期 near は選択管路重心深度（左ハンドルは手動調整可）
- * - 下部「視野範囲」ON … スライダー幅は固定、視野 ON 時は未操作時のみ左ハンドルが重心深度へ追従
+ * - トップ「視野」ON … 表示レンジは固定、初期 near は選択管路の視線方向最手前深度（左ハンドルは手動調整可）
+ * - 下部「視野範囲」ON … スライダー幅は固定、視野 ON 時は未操作時のみ左ハンドルが最手前深度へ追従
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -15,7 +15,7 @@ import {
   DEPTH_NEAR_MARGIN,
   DEPTH_RECOMPUTE_MS,
   buildViewDepthData,
-  depthAlongView,
+  computeMeshDepthRangeAlongView,
   getDepthSliderStep,
   makeDepthCacheSignature,
   resolveNearFar
@@ -111,7 +111,7 @@ const getMeshWorldCenter = (mesh, fallback) => {
 const clampRangeMin = (value, limits) =>
   THREE.MathUtils.clamp(value, limits.min, limits.max - DEPTH_MIN_SPAN);
 
-/** 視野範囲 ON 時の near(min) / far(max) 初期値 */
+/** 視野範囲 ON 時の near(min) / far(max) 初期値（focusDepth = 管路最手前深度） */
 const makeRangeValues = (limits, focusDepth, depthFocusOn) => {
   const useFocusNear = depthFocusOn && Number.isFinite(focusDepth);
   const min = useFocusNear
@@ -464,8 +464,12 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
 
         let focusDepth = null;
         if (depthFocusOn && selectedMesh) {
-          const focusPoint = getMeshWorldCenter(selectedMesh, state.center);
-          focusDepth = depthAlongView(focusPoint, camera.position, _viewDirScratch);
+          const pipeRange = computeMeshDepthRangeAlongView(
+            selectedMesh,
+            camera.position,
+            _viewDirScratch
+          );
+          focusDepth = pipeRange.min;
           focusDepthByViewRef.current[viewDef.key] = focusDepth;
         } else {
           focusDepthByViewRef.current[viewDef.key] = null;

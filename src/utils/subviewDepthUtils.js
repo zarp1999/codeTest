@@ -55,6 +55,30 @@ export function depthAlongView(point, cameraPosition, viewDir) {
 }
 
 /**
+ * 単一メッシュの bbox 8頂点から視線方向の深度範囲を求める。
+ * 視野 ON 時の near 用（最手前深度 = min）。
+ */
+export function computeMeshDepthRangeAlongView(mesh, cameraPosition, viewDir) {
+  if (!mesh) {
+    return { min: DEPTH_NEAR_MARGIN, max: DEPTH_NEAR_MARGIN + DEPTH_MIN_SPAN };
+  }
+  mesh.updateWorldMatrix(true, false);
+  _meshBoxScratch.setFromObject(mesh);
+  if (_meshBoxScratch.isEmpty()) {
+    return { min: DEPTH_NEAR_MARGIN, max: DEPTH_NEAR_MARGIN + DEPTH_MIN_SPAN };
+  }
+  const acc = { min: Infinity, max: -Infinity };
+  expandBoxCornersDepth(
+    _meshBoxScratch.min,
+    _meshBoxScratch.max,
+    cameraPosition,
+    viewDir,
+    acc
+  );
+  return finalizeDepthRange(acc);
+}
+
+/**
  * シーン traverse 1 回で全体・管路の深度範囲をまとめて求める。
  */
 export function computeDepthRangesFromScene(scene, cameraPosition, viewDir) {
