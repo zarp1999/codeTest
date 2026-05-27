@@ -183,44 +183,77 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 
   /**
-   * 視線上の規定距離の点を中心に、終了時の offset を計算する
-   * @returns {{ pivot: THREE.Vector3, startOffset: THREE.Vector3, endOffset: THREE.Vector3, distance: number } | null}
+   * 視線上の回転中心（OrbitControls.target）を解決する
+   * @returns {{ pivot: THREE.Vector3, distance: number } | null}
    */
-  const computeOrbitalStepOffsets = (direction, camera) => {
+  const resolveOrbitalPivot = (camera, controls) => {
     const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
-    const distance = orbitalCfg?.distance ?? 5;
-    const stepRad = THREE.MathUtils.degToRad(orbitalCfg?.stepDegrees ?? 30);
+    const fallbackDistance = orbitalCfg?.distance ?? 5;
+    const minDist = SCENE3D_CONFIG.other.minDistance ?? 0.1;
+
+    if (controls?.target) {
+      const pivot = orbitPivotScratchRef.current.copy(controls.target);
+      const dist = camera.position.distanceTo(pivot);
+      if (Number.isFinite(dist) && dist >= minDist) {
+        return { pivot: pivot.clone(), distance: dist };
+      }
+    }
 
     const forward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion);
     if (forward.lengthSq() < 1e-12) return null;
     forward.normalize();
 
-    const pivot = orbitPivotScratchRef.current.copy(camera.position).addScaledVector(forward, distance);
+    const pivot = orbitPivotScratchRef.current.copy(camera.position).addScaledVector(forward, fallbackDistance);
+    return { pivot: pivot.clone(), distance: fallbackDistance };
+  };
+
+  /**
+   * pivot を中心に点を回転（pivot + R(position - pivot)）
+   */
+  const rotatePointAroundPivot = (position, pivot, axis, angleRad) => {
+    orbitOffsetScratchRef.current.copy(position).sub(pivot);
+    orbitOffsetScratchRef.current.applyAxisAngle(axis, angleRad);
+    return position.copy(pivot).add(orbitOffsetScratchRef.current);
+  };
+
+  /**
+   * 視線上の点（target）を中心に、終了時の offset を計算する
+   * @returns {{ pivot: THREE.Vector3, startOffset: THREE.Vector3, endOffset: THREE.Vector3, distance: number } | null}
+   */
+  const computeOrbitalStepOffsets = (direction, camera, controls) => {
+    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
+    const stepRad = THREE.MathUtils.degToRad(orbitalCfg?.stepDegrees ?? 30);
+
+    const pivotInfo = resolveOrbitalPivot(camera, controls);
+    if (!pivotInfo) return null;
+
+    const { pivot, distance } = pivotInfo;
     const startOffset = new THREE.Vector3().copy(camera.position).sub(pivot);
     if (startOffset.lengthSq() < 1e-8) return null;
 
-    const endOffset = startOffset.clone();
+    const endPosition = camera.position.clone();
     const right = orbitRightScratchRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
     const worldUp = orbitWorldUpScratchRef.current.set(0, 1, 0);
 
     switch (direction) {
       case 'pitchDown':
-        endOffset.applyAxisAngle(right, -stepRad);
+        rotatePointAroundPivot(endPosition, pivot, right, -stepRad);
         break;
       case 'pitchUp':
-        endOffset.applyAxisAngle(right, stepRad);
+        rotatePointAroundPivot(endPosition, pivot, right, stepRad);
         break;
       case 'yawCW':
-        endOffset.applyAxisAngle(worldUp, -stepRad);
+        rotatePointAroundPivot(endPosition, pivot, worldUp, -stepRad);
         break;
       case 'yawCCW':
-        endOffset.applyAxisAngle(worldUp, stepRad);
+        rotatePointAroundPivot(endPosition, pivot, worldUp, stepRad);
         break;
       default:
         return null;
     }
 
-    return { pivot: pivot.clone(), startOffset, endOffset, distance };
+    const endOffset = endPosition.sub(pivot);
+    return { pivot, startOffset, endOffset, distance };
   };
 
   /**
@@ -248,7 +281,6 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     rightDragYawPitchRef.current.targetDistance = distance;
     controls.target.copy(pivot);
-    controls.update();
     updateTargetOffsetFromCamera(camera);
     syncCamerasFromActive(camera);
     updateCameraInfoFromCamera(camera);
@@ -275,7 +307,6 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     camera.lookAt(anim.pivot);
     camera.updateMatrixWorld();
     controls.target.copy(anim.pivot);
-    controls.update();
     syncCamerasFromActive(camera);
     updateCameraInfoFromCamera(camera);
     if (camera.isOrthographicCamera) {
@@ -304,7 +335,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     if (orbitalAnimRef.current?.active) return;
 
     const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
-    const step = computeOrbitalStepOffsets(direction, camera);
+    const step = computeOrbitalStepOffsets(direction, camera, controls);
     if (!step) return;
 
     orbitalAnimRef.current = {
@@ -4556,7 +4587,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             U:パン重心 J:位置重心 H:重心向き後進 G:重心向き前進 K:重心真下<br />
             M:自己位置をサーバーへ送信（操作終了時は自動送信）<br />
             WASDQE/矢印・ホイールズーム等の操作終了後、約0.4秒で自己位置を自動送信<br />
-            Orbital Control: 視線上5mの点を中心に30°刻み（↑見下ろし ↓見上げ ←時計回り →反時計回り）
+            Orbital Control: 視線上の注視点を中心に30°刻み（↑見下ろし ↓見上げ ←時計回り →反時計回り）
             {enableCrossSectionMode && <><br />4:断面に正対</>}
           </div>
         </div>

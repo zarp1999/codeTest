@@ -128,7 +128,7 @@ const SCENE3D_CONFIG = Object.freeze({
       },
       /** Orbital Control（視線上の点を中心に30°刻みで回転） */
       orbitalControl: {
-        /** 回転中心までの距離（m）— カメラ視線上の点 */
+        /** OrbitControls.target が無効なときの視線上フォールバック距離（m） */
         distance: 5,
         /** 1クリックあたりの回転角（度） */
         stepDegrees: 30,
