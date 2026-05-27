@@ -484,13 +484,11 @@ class CrossSectionPlane {
     const end = new THREE.Vector3(0, 0, 0);
     let polyhedronClickProjection = null;
 
-    if (geometry.type === "ExtrudeGeometry") {
-      if (!geometry || !geometry.extrudePath || geometry.extrudePath.length < 2) {
+    if (this.isExtrusionObject(objectData, geometry)) {
+      if (!geometry.extrudePath || geometry.extrudePath.length < 2) {
         return;
       } else {
-        // DBG:　パスを端点にしてみる
-        // geometry.vertices = geometry.extrudePath;
-        // DBG:　パス上の点で、クリック座標に最短距離の点を含む線分の２端点を求める
+        // クリック対象はドラッグ/クリック位置に最も近い extrudePath 線分を使用
         const pathPoints = this.convPoints(geometry.extrudePath);
         const closestSegment = this.getClosestStartEnd(pathPoints, clickPoint);
         start.x = closestSegment.start.x;
@@ -992,93 +990,33 @@ class CrossSectionPlane {
 
         const startDbgTimeB = performance.now();
 
-        if (geometry.type === "ExtrudeGeometry") {
-          if (!geometry || !geometry.extrudePath || geometry.extrudePath.length < 2) {
-            return;
-          } else {
-            // パス上の点で、クリック座標に最短距離の点を含む線分の２端点を求める
-            const pathPoints = this.convPoints(geometry.extrudePath);
-            const closestSegment = this.getClosestStartEnd(pathPoints, clickPoint);
-            start.x = closestSegment.start.x;
-            start.y = closestSegment.start.y;
-            start.z = closestSegment.start.z;
-            end.x = closestSegment.end.x;
-            end.y = closestSegment.end.y;
-            end.z = closestSegment.end.z;
-          }
-        } else {
-          const shapeTypeName = objectData.shapeTypeName || geometry.type;
-          if (
-            shapeTypeName === 'Polyhedron' ||
-            geometry.type === 'Polyhedron' ||
-            objectData?.shape_type === 14
-          ) {
-            const bbox = new THREE.Box3().setFromObject(obj);
-            const size = new THREE.Vector3();
-            bbox.getSize(size);
-            const nudge = this.getPlaneNudgeAmount(CROSS_SECTION_CONFIG.plane.thickness, size.length());
-            const { points: intersectionPoints, usedPlanePoint } =
-              this.getMeshPlaneIntersectionsWorldWithNudges(obj, planeNormalUnit, planePoint, 1e-5, nudge);
-            if (intersectionPoints.length === 0) {
-              return;
-            }
-
-            // planePointに最も近い交点を選択
-            let closestPoint = intersectionPoints[0];
-            let minDistance = usedPlanePoint.distanceTo(closestPoint);
-            intersectionPoints.forEach(p => {
-              const dist = usedPlanePoint.distanceTo(p);
-              if (dist < minDistance) {
-                minDistance = dist;
-                closestPoint = p;
-              }
-            });
-
-            const pipeTopY = closestPoint.y;
-            const intersectionPoint = new THREE.Vector3(closestPoint.x, pipeTopY, closestPoint.z);
-            const pipePosition = new THREE.Vector3(intersectionPoint.x, 0, intersectionPoint.z);
-            const basePoint = this.hasTerrainData(geo)
-              ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, terrainTriangles)
-              : null;
-
-            const basePointForLine = (basePoint == null || basePoint.length == 0)
-              ? 0
-              : basePoint[0];
-            const fallbackTopY = pipeTopY + radius;
-            this.pendingVerticalLines.push({
-              key: this.getCrossSectionKey(obj, intersectionPoint.z),
-              pipePosition,
-              basePoint: basePointForLine,
-              color: obj.material.color,
-              fallbackTopY,
-              radius,
-              attributeLabelText: formatPipeAttributeLabel(objectData)
-            });
-
-            this.pendingCrossSections.push({
-              center: intersectionPoint,
-              radius: radius,
-              axisDirection: this.currentAxisDirection ? this.currentAxisDirection.clone() : new THREE.Vector3(0, 0, 1),
-              color: obj.material.color,
-              pipeObject: obj,
-              crossSectionZ: intersectionPoint.z
-            });
-            return;
-          } else {
-            if (!geometry || !geometry.vertices || geometry.vertices.length < 2) {
-              return;
-            } else {
-              const vertices = geometry.vertices;
-              const { start: startP, end: endP } = this.getPipeStartEnd(vertices[0], vertices[vertices.length - 1], objectData, radius);
-              start.x = startP.x;
-              start.y = startP.y;
-              start.z = startP.z;
-              end.x = endP.x;
-              end.y = endP.y;
-              end.z = endP.z;
-            }
-          }
+        if (
+          this.isPolyhedronObject(objectData, geometry) ||
+          this.isExtrusionObject(objectData, geometry)
+        ) {
+          this.addPendingCrossSectionFromRotatedMeshPlane(
+            obj,
+            objectData,
+            planeNormalUnit,
+            planePoint,
+            geo,
+            terrainTriangles,
+            radius
+          );
+          return;
         }
+
+        if (!geometry || !geometry.vertices || geometry.vertices.length < 2) {
+          return;
+        }
+        const vertices = geometry.vertices;
+        const { start: startP, end: endP } = this.getPipeStartEnd(vertices[0], vertices[vertices.length - 1], objectData, radius);
+        start.x = startP.x;
+        start.y = startP.y;
+        start.z = startP.z;
+        end.x = endP.x;
+        end.y = endP.y;
+        end.z = endP.z;
 
         const endDbgTimeB = performance.now();
         dbgTimeB += (endDbgTimeB - startDbgTimeB);
@@ -1301,16 +1239,14 @@ class CrossSectionPlane {
           return;
         }
         const geometry = objectData.geometry?.[0];
-        const shapeTypeName = objectData.shapeTypeName || geometry.type;
 
         const radius = this.getPipeRadius(objectData);
 
-        // Polyhedronは「中心線のZ方向成分がある」前提が成立しないため、
-        // ワールドAABB（Box3）とZ平面の交差で縦線位置を決める。
+        // Polyhedron / Extrusion は中心線近似が不安定なため、
+        // ワールドメッシュとZ平面の交差で縦線位置を決める。
         if (
-          shapeTypeName === 'Polyhedron' ||
-          geometry.type === 'Polyhedron' ||
-          objectData?.shape_type === 14
+          this.isPolyhedronObject(objectData, geometry) ||
+          this.isExtrusionObject(objectData, geometry)
         ) {
           // 断面平面（Z = crossSectionZ）をPlaneとして扱い、共面も拾う
           const zPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
@@ -2225,6 +2161,104 @@ class CrossSectionPlane {
   shouldSkipVerticalAndCrossSection(objectData) {
     const shapeType = Number(objectData?.shape_type);
     return shapeType === 3 || shapeType === 11;
+  }
+
+  /**
+   * Extrusion（押し出し）オブジェクトかどうか
+   * @param {Object} objectData
+   * @param {Object|null} geometry
+   * @returns {boolean}
+   */
+  isExtrusionObject(objectData, geometry) {
+    if (!geometry) {
+      return false;
+    }
+    return (
+      Number(objectData?.shape_type) === 21 ||
+      geometry.type === 'Extrusion' ||
+      geometry.type === 'ExtrudeGeometry' ||
+      (Array.isArray(geometry.extrudePath) && geometry.extrudePath.length >= 2)
+    );
+  }
+
+  /**
+   * Polyhedron（直方体等）オブジェクトかどうか
+   * @param {Object} objectData
+   * @param {Object|null} geometry
+   * @returns {boolean}
+   */
+  isPolyhedronObject(objectData, geometry) {
+    const shapeTypeName = objectData?.shapeTypeName || geometry?.type;
+    return (
+      shapeTypeName === 'Polyhedron' ||
+      geometry?.type === 'Polyhedron' ||
+      Number(objectData?.shape_type) === 14
+    );
+  }
+
+  /**
+   * 回転断面平面とメッシュの交差から、縦線・断面を pending キューへ追加
+   * @returns {boolean} 交差が見つかった場合 true
+   */
+  addPendingCrossSectionFromRotatedMeshPlane(
+    obj,
+    objectData,
+    planeNormalUnit,
+    planePoint,
+    geo,
+    terrainTriangles,
+    radius
+  ) {
+    const bbox = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const nudge = this.getPlaneNudgeAmount(CROSS_SECTION_CONFIG.plane.thickness, size.length());
+    const { points: intersectionPoints, usedPlanePoint } =
+      this.getMeshPlaneIntersectionsWorldWithNudges(obj, planeNormalUnit, planePoint, 1e-5, nudge);
+    if (intersectionPoints.length === 0) {
+      return false;
+    }
+
+    let closestPoint = intersectionPoints[0];
+    let minDistance = usedPlanePoint.distanceTo(closestPoint);
+    intersectionPoints.forEach(p => {
+      const dist = usedPlanePoint.distanceTo(p);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestPoint = p;
+      }
+    });
+
+    const pipeTopY = closestPoint.y;
+    const intersectionPoint = new THREE.Vector3(closestPoint.x, pipeTopY, closestPoint.z);
+    const pipePosition = new THREE.Vector3(intersectionPoint.x, 0, intersectionPoint.z);
+    const basePoint = this.hasTerrainData(geo)
+      ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, terrainTriangles)
+      : null;
+
+    const basePointForLine = (basePoint == null || basePoint.length == 0)
+      ? 0
+      : basePoint[0];
+    const fallbackTopY = pipeTopY + radius;
+    this.pendingVerticalLines.push({
+      key: this.getCrossSectionKey(obj, intersectionPoint.z),
+      pipePosition,
+      basePoint: basePointForLine,
+      color: obj.material.color,
+      fallbackTopY,
+      radius,
+      attributeLabelText: formatPipeAttributeLabel(objectData)
+    });
+
+    this.pendingCrossSections.push({
+      center: intersectionPoint,
+      radius: radius,
+      axisDirection: this.currentAxisDirection ? this.currentAxisDirection.clone() : new THREE.Vector3(0, 0, 1),
+      color: obj.material.color,
+      pipeObject: obj,
+      crossSectionZ: intersectionPoint.z
+    });
+    return true;
   }
 
   /**
