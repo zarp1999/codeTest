@@ -125,6 +125,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const orbitOffsetScratchRef = useRef(new THREE.Vector3());
   const orbitRightScratchRef = useRef(new THREE.Vector3());
   const orbitWorldUpScratchRef = useRef(new THREE.Vector3(0, 1, 0));
+  const orbitalAnimRef = useRef(null);
 
   // 4キー（断面に正対）
   const faceSectionSideSignRef = useRef(1);
@@ -179,49 +180,55 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     rightDragYawPitchRef.current.pitch = eulerYXZ.x;
   };
 
-  /**
-   * 視線上の規定距離の点を中心に、カメラを一定角度だけ軌道回転させる
-   * @param {'pitchDown'|'pitchUp'|'yawCW'|'yawCCW'} direction
-   */
-  const applyOrbitalControlStep = (direction) => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
+  const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 
+  /**
+   * 視線上の規定距離の点を中心に、終了時の offset を計算する
+   * @returns {{ pivot: THREE.Vector3, startOffset: THREE.Vector3, endOffset: THREE.Vector3, distance: number } | null}
+   */
+  const computeOrbitalStepOffsets = (direction, camera) => {
     const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
     const distance = orbitalCfg?.distance ?? 5;
     const stepRad = THREE.MathUtils.degToRad(orbitalCfg?.stepDegrees ?? 30);
-    const pitchLimit = Math.PI / 2 - 0.01;
 
     const forward = orbitForwardScratchRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    if (forward.lengthSq() < 1e-12) return;
+    if (forward.lengthSq() < 1e-12) return null;
     forward.normalize();
 
     const pivot = orbitPivotScratchRef.current.copy(camera.position).addScaledVector(forward, distance);
-    const offset = orbitOffsetScratchRef.current.copy(camera.position).sub(pivot);
-    if (offset.lengthSq() < 1e-8) return;
+    const startOffset = new THREE.Vector3().copy(camera.position).sub(pivot);
+    if (startOffset.lengthSq() < 1e-8) return null;
 
+    const endOffset = startOffset.clone();
     const right = orbitRightScratchRef.current.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
     const worldUp = orbitWorldUpScratchRef.current.set(0, 1, 0);
 
     switch (direction) {
       case 'pitchDown':
-        offset.applyAxisAngle(right, -stepRad);
+        endOffset.applyAxisAngle(right, -stepRad);
         break;
       case 'pitchUp':
-        offset.applyAxisAngle(right, stepRad);
+        endOffset.applyAxisAngle(right, stepRad);
         break;
       case 'yawCW':
-        offset.applyAxisAngle(worldUp, -stepRad);
+        endOffset.applyAxisAngle(worldUp, -stepRad);
         break;
       case 'yawCCW':
-        offset.applyAxisAngle(worldUp, stepRad);
+        endOffset.applyAxisAngle(worldUp, stepRad);
         break;
       default:
-        return;
+        return null;
     }
 
-    camera.position.copy(pivot).add(offset);
+    return { pivot: pivot.clone(), startOffset, endOffset, distance };
+  };
+
+  /**
+   * Orbital 回転完了時のカメラ姿勢を確定（pitchクランプ・同期）
+   */
+  const finalizeOrbitalCameraState = (camera, controls, pivot, distance) => {
+    const pitchLimit = Math.PI / 2 - 0.01;
+
     camera.lookAt(pivot);
     camera.updateMatrixWorld();
 
@@ -248,7 +255,68 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     if (camera.isOrthographicCamera) {
       updateOrthographicFrustum(camera);
     }
-    scheduleCameraPositionSendRef.current?.();
+    previousCameraPosition.current.copy(camera.position);
+    previousCameraRotation.current.copy(camera.rotation);
+  };
+
+  /**
+   * Orbital Control 補間を1フレーム進める（animate ループから呼ぶ）
+   */
+  const tickOrbitalControlAnimation = (camera, controls) => {
+    const anim = orbitalAnimRef.current;
+    if (!anim?.active || !camera || !controls) return false;
+
+    const elapsed = performance.now() - anim.startTime;
+    const rawT = Math.min(1, elapsed / anim.durationMs);
+    const t = easeOutCubic(rawT);
+
+    orbitOffsetScratchRef.current.copy(anim.startOffset).lerp(anim.endOffset, t);
+    camera.position.copy(anim.pivot).add(orbitOffsetScratchRef.current);
+    camera.lookAt(anim.pivot);
+    camera.updateMatrixWorld();
+    controls.target.copy(anim.pivot);
+    controls.update();
+    syncCamerasFromActive(camera);
+    updateCameraInfoFromCamera(camera);
+    if (camera.isOrthographicCamera) {
+      updateOrthographicFrustum(camera);
+    }
+
+    if (rawT >= 1) {
+      camera.position.copy(anim.pivot).add(anim.endOffset);
+      finalizeOrbitalCameraState(camera, controls, anim.pivot, anim.distance);
+      orbitalAnimRef.current = null;
+      localCameraControlActiveRef.current = false;
+      scheduleCameraPositionSendRef.current?.();
+    }
+
+    return true;
+  };
+
+  /**
+   * 視線上の規定距離の点を中心に、カメラを一定角度だけ軌道回転させる（lerp で補間）
+   * @param {'pitchDown'|'pitchUp'|'yawCW'|'yawCCW'} direction
+   */
+  const applyOrbitalControlStep = (direction) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    if (orbitalAnimRef.current?.active) return;
+
+    const orbitalCfg = SCENE3D_CONFIG.controls.orbitalControl;
+    const step = computeOrbitalStepOffsets(direction, camera);
+    if (!step) return;
+
+    orbitalAnimRef.current = {
+      active: true,
+      pivot: step.pivot,
+      startOffset: step.startOffset,
+      endOffset: step.endOffset,
+      distance: step.distance,
+      startTime: performance.now(),
+      durationMs: orbitalCfg?.durationMs ?? 300,
+    };
+    localCameraControlActiveRef.current = true;
   };
 
   /**
@@ -2720,6 +2788,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       if (!camera) {
         return;
       }
+
+      tickOrbitalControlAnimation(camera, controls);
 
       // 左Shiftキーでマウス操作を低速化
       if (keysPressed.current['shift']) {

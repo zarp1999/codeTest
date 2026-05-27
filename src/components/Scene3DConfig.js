@@ -132,6 +132,8 @@ const SCENE3D_CONFIG = Object.freeze({
         distance: 5,
         /** 1クリックあたりの回転角（度） */
         stepDegrees: 30,
+        /** 1クリックあたりの補間時間（ms） */
+        durationMs: 300,
       },
     },
     /**
