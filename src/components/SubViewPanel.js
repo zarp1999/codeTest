@@ -2,9 +2,9 @@
  * SubViewPanel — 下部3面サブビュー
  *
  * 深度レンジ（最小〜最大）:
- * - サブビュー初回表示時に全管路範囲で固定（追従・管路選択では変えない）
+ * - サブビュー初回表示時に全管路 min と規定幅 max（DEPTH_SLIDER_MAX_SPAN）で固定
  * - トップ「視野」ON … 表示レンジは固定、初期 near は選択管路の視線方向最手前深度（左ハンドルは手動調整可）
- * - 下部「視野範囲」ON … スライダー幅は固定、視野 ON 時は未操作時のみ左ハンドルが最手前深度へ追従
+ * - 下部「視野範囲」ON … スライダー幅は固定、ホイールで 0.1m 刻み調整（左半=near / 右半=far）
  */
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -14,6 +14,7 @@ import {
   DEPTH_MIN_SPAN,
   DEPTH_NEAR_MARGIN,
   DEPTH_RECOMPUTE_MS,
+  DEPTH_WHEEL_STEP,
   buildViewDepthData,
   computeMeshDepthRangeAlongView,
   getDepthSliderStep,
@@ -235,6 +236,52 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
     return localY >= bandTop;
   };
 
+  /** 深度帯ホイール: 対象面と near(min)/far(max) どちらを動かすか */
+  const getDepthControlsWheelTarget = ({ clientX, clientY, rect }) => {
+    if (!rect || !visible) return null;
+    const frame = lastFrameRef.current;
+    if (frame.canvasWidth <= 0) return null;
+
+    const localY = clientY - rect.top;
+    if (!isInDepthControlsBand(localY, frame)) return null;
+
+    const localX = clientX - rect.left;
+    const panelWidth = frame.panelWidth > 0
+      ? frame.panelWidth
+      : Math.floor(frame.canvasWidth / VIEW_DEFS.length);
+    const rawIndex = Math.floor(localX / Math.max(1, panelWidth));
+    const index = Math.min(VIEW_DEFS.length - 1, Math.max(0, rawIndex));
+    const panelLocalX = localX - index * panelWidth;
+    return {
+      viewKey: VIEW_DEFS[index].key,
+      adjustNear: panelLocalX < panelWidth * 0.5,
+    };
+  };
+
+  const applyDepthRangeWheelAdjustment = (viewKey, adjustNear, deltaY) => {
+    if (!depthRangeEnabledRef.current[viewKey]) return false;
+
+    const limits = frozenDepthLimitsRef.current[viewKey] || DEFAULT_DEPTH_LIMITS;
+    const current = depthRangeValuesRef.current[viewKey];
+    if (!current) return false;
+
+    const step = deltaY < 0 ? DEPTH_WHEEL_STEP : -DEPTH_WHEEL_STEP;
+    let { min, max } = current;
+    if (adjustNear) {
+      min += step;
+      manualNearOverrideRef.current[viewKey] = true;
+    } else {
+      max += step;
+    }
+
+    const clampedMin = THREE.MathUtils.clamp(min, limits.min, limits.max - DEPTH_MIN_SPAN);
+    const clampedMax = THREE.MathUtils.clamp(max, clampedMin + DEPTH_MIN_SPAN, limits.max);
+    const next = { min: clampedMin, max: clampedMax };
+    depthRangeValuesRef.current = { ...depthRangeValuesRef.current, [viewKey]: next };
+    setDepthRangeValues((prev) => ({ ...prev, [viewKey]: next }));
+    return true;
+  };
+
   const getHit = ({ clientX, clientY, rect, excludeDepthControls = false }) => {
     if (!visible || !rect) return null;
     const frame = lastFrameRef.current;
@@ -374,7 +421,16 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
       if (!rect) return false;
       const frame = lastFrameRef.current;
       const localY = clientY - rect.top;
-      if (isInDepthControlsBand(localY, frame)) return true;
+
+      const wheelTarget = getDepthControlsWheelTarget({ clientX, clientY, rect });
+      if (wheelTarget) {
+        applyDepthRangeWheelAdjustment(
+          wheelTarget.viewKey,
+          wheelTarget.adjustNear,
+          deltaY
+        );
+        return true;
+      }
 
       const hit = getHit({ clientX, clientY, rect, excludeDepthControls: true });
       if (!hit) return false;

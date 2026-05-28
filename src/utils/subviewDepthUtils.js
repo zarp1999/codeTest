@@ -4,7 +4,11 @@ import * as THREE from 'three';
 export const DEPTH_NEAR_MARGIN = 0.1;
 /** near と far の最小差（m） */
 export const DEPTH_MIN_SPAN = 1;
-/** スライダー操作レンジの最大幅（m） */
+/** 視野範囲スライダーの操作幅上限（m）。min 基点で max を cap し細かい調整を可能にする */
+export const DEPTH_SLIDER_MAX_SPAN = 150;
+/** 深度帯ホイール1ノッチあたりの調整量（m） */
+export const DEPTH_WHEEL_STEP = 0.1;
+/** 異常に広いレンジの安全用トリム幅（m） */
 export const SLIDER_MAX_SPAN = 2500;
 /** far の上限（カメラ距離倍率・絶対上限） */
 export const FAR_CAP_DISTANCE_MUL = 40;
@@ -135,6 +139,8 @@ export function capDepthMax(rawMax, distance) {
 export function buildPipeDepthLimits(pipeLimits, sceneLimits, distance) {
   let min = Math.max(DEPTH_NEAR_MARGIN, pipeLimits.min);
   let max = Math.max(min + DEPTH_MIN_SPAN, capDepthMax(sceneLimits.max, distance));
+
+  max = Math.min(max, min + DEPTH_SLIDER_MAX_SPAN);
 
   if (max - min > SLIDER_MAX_SPAN) {
     const center = (min + max) * 0.5;
