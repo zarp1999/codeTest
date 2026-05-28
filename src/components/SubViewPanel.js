@@ -653,6 +653,10 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
     }));
   };
 
+  const handleDepthRangeWheelAdjust = (viewKey, adjustNear, deltaY) => {
+    applyDepthRangeWheelAdjustment(viewKey, adjustNear, deltaY);
+  };
+
   const handleDirectionModeChange = (viewKey, mode) => {
     setDirectionModeMap((prev) => {
       if (prev[viewKey] === mode) return prev;
@@ -695,7 +699,14 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                   </span>
                 </label>
               </div>
-              <div className="subview-depth-controls">
+              <div
+                className="subview-depth-controls"
+                onWheel={(event) => {
+                  if (!depthRangeEnabled[view.key]) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
                 <div className="subview-depth-row">
                   <label className="subview-depth-toggle">
                     <input
@@ -714,6 +725,9 @@ const SubViewPanel = forwardRef(function SubViewPanel({ visible, depthFocusEnabl
                       valueMax={depthRangeValues[view.key].max}
                       step={getDepthSliderStep(limits.min, limits.max)}
                       onChange={(min, max) => handleDepthRangeChange(view.key, min, max)}
+                      onWheelAdjust={(adjustNear, deltaY) =>
+                        handleDepthRangeWheelAdjust(view.key, adjustNear, deltaY)
+                      }
                     />
                   ) : (
                     <span className="subview-depth-limits-hint">

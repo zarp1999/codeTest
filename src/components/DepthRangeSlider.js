@@ -18,6 +18,7 @@ export default function DepthRangeSlider({
   valueMin,
   valueMax,
   onChange,
+  onWheelAdjust,
   disabled = false,
   lockMin = false,
   step = 0.1
@@ -40,8 +41,21 @@ export default function DepthRangeSlider({
 
   const sliderDisabled = lockMin ? [true, !!disabled] : !!disabled;
 
+  const handleWheel = (event) => {
+    if (disabled || typeof onWheelAdjust !== 'function') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const adjustNear = (event.clientX - rect.left) < rect.width * 0.5;
+    onWheelAdjust(adjustNear, event.deltaY);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   return (
-    <div className={`depth-range-slider ${className} ${disabled ? 'disabled' : ''}`.trim()}>
+    <div
+      className={`depth-range-slider ${className} ${disabled ? 'disabled' : ''}`.trim()}
+      onWheelCapture={handleWheel}
+    >
       <span className="depth-range-value depth-range-value-min">{safeMin.toFixed(1)} m</span>
       <Slider
         className="depth-range-ant-slider"
