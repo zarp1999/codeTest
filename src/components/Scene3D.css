@@ -97,6 +97,15 @@
   border-color: rgba(99, 179, 237, 0.8);
 }
 
+.scene-top-right-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.scene-top-right-button:disabled:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
 .scene-top-right-search-input {
   z-index: 16;
   width: 140px;

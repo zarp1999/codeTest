@@ -28,6 +28,8 @@ import SceneObjectRegistry from './SceneObjectReqistry.js';
 import enterAddMode from './PipeLocator.js';
 // import { createDataAccessor } from '../DataAccessor/Factory.js';
 import { CityObjectState } from './CityObjectState.js';
+import { UndoManager } from './undo/undoManager.js';
+import { captureSceneSnapshot, applySceneSnapshot } from './undo/sceneUndoSnapshot.js';
 
 
 /**
@@ -268,7 +270,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // 3Dオブジェクトデータ管理
   // const objectRegistry = useMemo(() => new SceneObjectRegistry(accessor={accessor}), [accessor]);
   const objectRegistry = useMemo(() => new SceneObjectRegistry(accessor), [accessor]);
+  const undoManagerRef = useRef(new UndoManager());
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
+  const refreshUndoUi = () => {
+    const mgr = undoManagerRef.current;
+    setCanUndo(mgr.undoStack.length > 1);
+    setCanRedo(mgr.redoStack.length > 0);
+  };
 
   // 3Dオブジェクトの状態(レイヤーパネル情報等が更新されると、再計算される)
   const cityObjectState = CityObjectState(layerData, shapeTypes, sourceTypes);
@@ -1273,6 +1283,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
         // オブジェクトデータ管理に編集を登録。
         objectRegistry.editObject(selectedMeshRef.current);
+        pushUndoSnapshot();
       }
       isDragging.current = false;
       pendingDragRef.current = false;
@@ -1852,6 +1863,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             objectsRef.current[added.key] = addedMesh;
             applyStyle(addedMesh);
           }
+          pushUndoSnapshot();
           return;
         }
 
@@ -1863,6 +1875,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             objectsRef.current[added.key] = addedMesh;
             applyStyle(addedMesh);
           }
+          pushUndoSnapshot();
           return;
         }
 
@@ -1878,6 +1891,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
             applyStyle(addedMesh);
           }
         }
+        pushUndoSnapshot();
       })
   }
 
@@ -1899,6 +1913,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       selectedMeshRef.current = null;
       clearOutline();
       message.success("オブジェクトを削除しました。");
+      pushUndoSnapshot();
       return;
     }
 
@@ -1922,6 +1937,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     setSelectedObject(null);
     selectedMeshRef.current = null;
     clearOutline();
+    pushUndoSnapshot();
   }
 
   // メッシュを削除
@@ -1953,6 +1969,42 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const objectKey = objectRegistry.getObjectKey(mesh);
     delete objectsRef.current[objectKey];
   }
+
+  const applyUndoSnapshot = (snapshot) => {
+    applySceneSnapshot(snapshot, {
+      sceneRef,
+      objectsRef,
+      objectRegistry,
+      selectedMeshRef,
+      createCityObjects,
+      shapeTypeMap: cityObjectState.shapeTypeMap,
+      applyStyle,
+      setSelectedObject,
+      showOutline,
+      clearOutline,
+    });
+  };
+
+  const pushUndoSnapshot = () => {
+    undoManagerRef.current.push(
+      captureSceneSnapshot(objectRegistry, objectsRef, selectedMeshRef)
+    );
+    refreshUndoUi();
+  };
+
+  const handleUndo = () => {
+    const ok = undoManagerRef.current.undo(applyUndoSnapshot);
+    if (ok) {
+      refreshUndoUi();
+    }
+  };
+
+  const handleRedo = () => {
+    const ok = undoManagerRef.current.redo(applyUndoSnapshot);
+    if (ok) {
+      refreshUndoUi();
+    }
+  };
 
   // 登録ボタンのハンドラー
   const handleRegister = async (objectData, inputValues) => {
@@ -1991,6 +2043,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       applyStyle(duplicatedMesh);
       setSelectedObject(duplicatedMesh.userData.objectData);
       selectedMeshRef.current = duplicatedMesh;
+      pushUndoSnapshot();
     }
   }
 
@@ -2045,6 +2098,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     console.timeEnd(label);
     console.log(`[restoreAll] total: ${(perfNow() - startedAt).toFixed(1)}ms`);
+    pushUndoSnapshot();
   }
 
   // 復元ボタンのハンドラー
@@ -2058,6 +2112,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     restoreObject(objectKey, mesh);
     objectRegistry.rollback(objectKey);
+    pushUndoSnapshot();
   }
 
   // 復元処理
@@ -2218,6 +2273,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       setSelectedObject(newMesh.userData.objectData);
       selectedMeshRef.current = newMesh;
       showOutline(newMesh);
+      pushUndoSnapshot();
     } else {
       clearOutline();
       selectedMeshRef.current = null;
@@ -2228,6 +2284,25 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const handleKeyDown = async (event) => {
     // 入力欄にフォーカスがある場合は無視
     if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      if (!event.repeat) {
+        handleUndo();
+      }
+      return;
+    }
+
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))
+    ) {
+      event.preventDefault();
+      if (!event.repeat) {
+        handleRedo();
+      }
       return;
     }
 
@@ -3887,6 +3962,12 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     // メッシュ情報をデータ管理にアタッチ
     objectRegistry.attachObjectsMeshRef(objectsRef.current);
 
+    undoManagerRef.current = new UndoManager();
+    undoManagerRef.current.push(
+      captureSceneSnapshot(objectRegistry, objectsRef, selectedMeshRef)
+    );
+    refreshUndoUi();
+
     // 既存の床を先に削除（再生成時の重複防止）
     if (floorRef.current) {
       sceneRef.current.remove(floorRef.current);
@@ -4436,6 +4517,24 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       )}
 
       <div className="scene-top-right-buttons">
+        <button
+          type="button"
+          className="scene-top-right-button"
+          onClick={handleUndo}
+          disabled={!canUndo}
+          title="元に戻す (Ctrl+Z)"
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          className="scene-top-right-button"
+          onClick={handleRedo}
+          disabled={!canRedo}
+          title="やり直す (Ctrl+Y)"
+        >
+          Redo
+        </button>
         <button
           type="button"
           className={`scene-top-right-button ${showEquipmentBookmarksPanel ? 'active' : ''}`}
