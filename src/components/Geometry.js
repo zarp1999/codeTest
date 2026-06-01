@@ -164,8 +164,7 @@ const getRadius_m = (obj, shapeTypeName) => {
     }
  
     if (Number.isFinite(radiusRaw) && radiusRaw > 0) {
-      // 5を超える値はmmとみなしてmへ換算。それ以下はmとして扱う。
-      radius_m = radiusRaw > 5 ? radiusRaw / 1000 : radiusRaw;
+      radius_m = radiusRaw;
     }
   }
   return radius_m;

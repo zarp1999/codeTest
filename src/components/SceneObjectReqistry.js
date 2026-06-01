@@ -1,6 +1,7 @@
 import { message } from 'antd';
 import * as THREE from 'three';
 import { Rectangle, QuadtreeNode } from './3D/QuadTree.js';
+import { diameterMmToStorage } from './pipelineInfoUtils.js';
 // import { createDataAccessor } from '../../DataAccessor/Factory.js';
 
 // SceneObjectRegistry.js
@@ -633,23 +634,23 @@ export default class SceneObjectRegistry {
       }
 
       if (key === "直径[mm]") {
-        const newDiameter = Number(value);
-        if (isNaN(newDiameter)) return;
+        const diameterMm = Number(value);
+        if (isNaN(diameterMm)) return;
 
-        const newRadius = newDiameter / 2;
+        const diameterM = diameterMmToStorage(diameterMm);
+        const radiusM = diameterM / 2;
 
-        if (editedAttributes.radius) {
-          editedAttributes.radius = newRadius;
+        if (editedAttributes.radius != null) {
+          editedAttributes.radius = radiusM;
         }
 
-        if (editedAttributes.diameter) {
-          editedAttributes.diameter = newDiameter;
+        if (editedAttributes.diameter != null) {
+          editedAttributes.diameter = diameterM;
         }
 
         // ExtrudeGeometryの場合、vertices2Dを再生成
         if (isExtrude && editedGeometry.vertices2D) {
-          // 半径をメートル単位に変換（mm単位の場合は1000で割る）
-          const radiusInMeters = newRadius > 5 ? newRadius / 1000 : newRadius;
+          const radiusInMeters = radiusM;
           // 元のセグメント数を維持（デフォルトは32）
           const segments = editedGeometry.vertices2D.length || 32;
           const newVertices2D = [];

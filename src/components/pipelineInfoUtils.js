@@ -7,6 +7,34 @@ export const RADIUS_CONFIG = Object.freeze({
   defaultValue: 0.3,
 });
 
+/** 属性値（m または旧mm）を表示用 mm 数値へ */
+export function toDiameterMmNumber(rawDiameter) {
+  const n = Number(rawDiameter);
+  if (!Number.isFinite(n)) return null;
+  return n <= RADIUS_CONFIG.threshold ? n * RADIUS_CONFIG.scale : n;
+}
+
+/** 属性値（m または旧mm）を表示用 mm 文字列へ */
+export function toDiameterMmForDisplay(rawDiameter) {
+  const mm = toDiameterMmNumber(rawDiameter);
+  return mm == null ? '' : mm.toFixed(3);
+}
+
+/** UI入力[mm]を属性保存用[m]へ */
+export function diameterMmToStorage(diameterMm) {
+  return diameterMm / RADIUS_CONFIG.scale;
+}
+
+function getRawDiameter(attributes) {
+  if (attributes?.radius != null && Number.isFinite(Number(attributes.radius))) {
+    return Number(attributes.radius) * 2;
+  }
+  if (attributes?.diameter != null && Number.isFinite(Number(attributes.diameter))) {
+    return Number(attributes.diameter);
+  }
+  return null;
+}
+
 function getShapeTypeName(shapeTypes, shapeType) {
   if (!shapeTypes || shapeType == null) return '';
   const shapeTypeData = shapeTypes.find((st) => String(st.id) === String(shapeType));
@@ -154,11 +182,7 @@ export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes 
           '高さ[m]': polyInfo.size.y.toFixed(3),
         }
       : {
-          '直径[mm]': attributes?.radius
-            ? (attributes.radius * 2).toFixed(3)
-            : attributes?.diameter
-              ? Number(attributes.diameter).toFixed(3)
-              : '',
+          '直径[mm]': toDiameterMmForDisplay(getRawDiameter(attributes)),
           '': '',
         };
 
