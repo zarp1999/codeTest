@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAppConfig } from '../../contexts/AppConfigContext';
+import DemPanel from '../DemPanel/DemPanel';
+import { useDemDisplay } from '../../contexts/DemDisplayContext';
 import Scene3D from '../Scene3D';
 import './Scene3DView.css';
 
@@ -9,7 +11,7 @@ import './Scene3DView.css';
  * - 3D表示、管路情報、距離計測機能を提供
  * - GeoTIFF地形表示機能を統合
  */
-function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl, accessor }) {
+function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, geoTiffUrl, potreeMetadataUrl, accessor, apiBaseUrl }) {
   const config = useAppConfig();
   const mode = config?.mode || 'normal';
   const [terrainVisible, setTerrainVisible] = useState(mode === 'elevation');
@@ -19,9 +21,18 @@ function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourc
     setTerrainVisible(mode === 'elevation');
   }, [mode]);
 
+  const demCtx = useDemDisplay();
+  const activeDem = demCtx.activeDem;
+  const markLoaded = demCtx.markLoaded;
   const handleToggleTerrain = () => {
     setTerrainVisible(!terrainVisible);
   };
+
+  const handleDemLoaded = useCallback((terrainKey) => {
+    if (markLoaded) {
+      markLoaded(terrainKey);
+    }
+  },[markLoaded]);
 
   return (
     <div className="scene3d-view-container">
@@ -54,6 +65,11 @@ function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourc
           )}
         </div>
       )}
+      {demCtx && (
+        <div className="dem-panel-container">
+          <DemPanel apiBaseUrl={apiBaseUrl} />
+        </div>
+      )}
       <Scene3D
         cityJsonData={cityJsonData}
         userPositions={userPositions}
@@ -65,6 +81,8 @@ function Scene3DView({ cityJsonData, userPositions, shapeTypes, layerData, sourc
         terrainVisible={terrainVisible}
         terrainOpacity={terrainOpacity}
         accessor={accessor}
+        activeDem={activeDem}
+        onDemLoaded={handleDemLoaded}
       />
     </div>
   );

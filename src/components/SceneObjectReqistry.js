@@ -320,11 +320,11 @@ export default class SceneObjectRegistry {
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     };
-    // 既存データの符号規約（正値/負値）を維持して、土被り[m]をZ[cm]へ変換する
+    // 既存データの符号規約（正値/負値）を維持して、土被り[m]をZ[m]へ変換する
     const calcDepthZByCurrentSign = (coverDepth, offset, currentZ) => {
       const current = Number(currentZ);
-      const zPosRule = (coverDepth - offset) * 100;
-      const zNegRule = -(coverDepth + offset) * 100;
+      const zPosRule = coverDepth - offset;
+      const zNegRule = -(coverDepth + offset);
       if (Number.isFinite(current)) {
         return current < 0 ? zNegRule : zPosRule;
       }
@@ -562,8 +562,8 @@ export default class SceneObjectRegistry {
             Number.isFinite(Number(editedAttributes.end_point_depth));
 
           if (hasDepthAttrs) {
-            const startDepthM = Number(editedAttributes.start_point_depth) / 100; // cm → m
-            const endDepthM = Number(editedAttributes.end_point_depth) / 100;     // cm → m
+            const startDepthM = Number(editedAttributes.start_point_depth);
+            const endDepthM = Number(editedAttributes.end_point_depth);
             const currentCenterCoverM = (startDepthM + endDepthM) / 2;
             const deltaCoverM = coverDepth - currentCenterCoverM; // cover増加(正) = 下方向へ移動
 
@@ -580,15 +580,15 @@ export default class SceneObjectRegistry {
                 (Number(point[2]) || 0) + deltaZ
               ]);
 
-              // depth属性(cm)も新しい中央土被りに追従させる
-              const deltaDepthCm = deltaCoverM * 100;
+              // depth属性(m)も新しい中央土被りに追従させる
+              const deltaDepthM = deltaCoverM;
               if (editedAttributes.start_point_depth != null) {
                 editedAttributes.start_point_depth =
-                  Number(editedAttributes.start_point_depth) + deltaDepthCm;
+                  Number(editedAttributes.start_point_depth) + deltaDepthM;
               }
               if (editedAttributes.end_point_depth != null) {
                 editedAttributes.end_point_depth =
-                  Number(editedAttributes.end_point_depth) + deltaDepthCm;
+                  Number(editedAttributes.end_point_depth) + deltaDepthM;
               }
             }
           } else {
@@ -909,7 +909,7 @@ export default class SceneObjectRegistry {
             Number.isFinite(Number(editedAttributes.start_point_depth));
 
           if (hasDepthAttrs) {
-            const currentDepthM = Number(editedAttributes.start_point_depth) / 100; // cm → m
+            const currentDepthM = Number(editedAttributes.start_point_depth);
             const deltaCoverM = coverDepth - currentDepthM;
 
             if (deltaCoverM !== 0) {
@@ -957,10 +957,10 @@ export default class SceneObjectRegistry {
                    (Number(editedGeometry.extrudePath[lastIdx][2]) || 0)) / 2;
               }
 
-              const deltaDepthCm = deltaCoverM * 100;
+              const deltaDepthM = deltaCoverM;
               if (editedAttributes.start_point_depth != null) {
                 editedAttributes.start_point_depth =
-                  Number(editedAttributes.start_point_depth) + deltaDepthCm;
+                  Number(editedAttributes.start_point_depth) + deltaDepthM;
               }
             }
           } else {
@@ -1162,7 +1162,7 @@ export default class SceneObjectRegistry {
             Number.isFinite(Number(editedAttributes.end_point_depth));
 
           if (hasDepthAttrs) {
-            const currentDepthM = Number(editedAttributes.end_point_depth) / 100; // cm → m
+            const currentDepthM = Number(editedAttributes.end_point_depth);
             const deltaCoverM = coverDepth - currentDepthM;
 
             if (deltaCoverM !== 0) {
@@ -1209,10 +1209,10 @@ export default class SceneObjectRegistry {
                    (Number(editedGeometry.extrudePath[lastIdx][2]) || 0)) / 2;
               }
 
-              const deltaDepthCm = deltaCoverM * 100;
+              const deltaDepthM = deltaCoverM;
               if (editedAttributes.end_point_depth != null) {
                 editedAttributes.end_point_depth =
-                  Number(editedAttributes.end_point_depth) + deltaDepthCm;
+                  Number(editedAttributes.end_point_depth) + deltaDepthM;
               }
             }
           } else {
@@ -1406,7 +1406,6 @@ export default class SceneObjectRegistry {
     const duplicatedData = JSON.parse(JSON.stringify(templateData));
 
     const geometry = duplicatedData?.geometry?.[0];
-    const offsetCm = offset * 100;
     if (!geometry) {
       this.addedObjectsData[newKey] = duplicatedData;
       return { key: newKey, object: duplicatedData };
@@ -1424,7 +1423,7 @@ export default class SceneObjectRegistry {
       if (duplicatedData.shape_type === 25) {
         geometry.vertices = geometry.vertices.map(v => [v[0], v[1], v[2] + offset]);
       } else {
-        geometry.vertices = geometry.vertices.map(v => [v[0], v[1], v[2] - offsetCm]);
+        geometry.vertices = geometry.vertices.map(v => [v[0], v[1], v[2] - offset]);
       }
     }
 
@@ -1437,14 +1436,14 @@ export default class SceneObjectRegistry {
     // depthは「地表から下向き正」のため、上に3m動かすには depth を減算する
     if (duplicatedData?.attributes) {
       if (duplicatedData.attributes.start_point_depth != null) {
-        duplicatedData.attributes.start_point_depth -= offsetCm;
+        duplicatedData.attributes.start_point_depth -= offset;
       }
       if (duplicatedData.attributes.end_point_depth != null) {
-        duplicatedData.attributes.end_point_depth -= offsetCm;
+        duplicatedData.attributes.end_point_depth -= offset;
       }
 
       // Polyhedronのdepth系属性（depth, depth_1, depth_2 ...）も複製時に同量移動する
-      // NOTE: 現状データは start/end_point_depth と同様に cm 前提で扱う
+      // NOTE: start/end_point_depth と同様に m 単位で扱う
       if (duplicatedData.shape_type === 25) {
         Object.keys(duplicatedData.attributes).forEach((key) => {
           if (/^depth(?:_\d+)?$/i.test(key)) {

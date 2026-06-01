@@ -127,7 +127,7 @@ export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes 
     if (depthValue == null) return null;
     const n = Number(depthValue);
     if (!Number.isFinite(n)) return null;
-    return isExtrude ? n : n / 100;
+    return n;
   };
 
   const toDisplayXYZ = (worldVec3) => {
@@ -174,8 +174,8 @@ export function buildPipelineData(objectData, { selectedMesh = null, shapeTypes 
   let endCoverDepthFromAttrs = '';
 
   if (hasDepthAttrsForDisplay) {
-    const startDepthM = Number(attributes.start_point_depth) / 100;
-    const endDepthM = Number(attributes.end_point_depth) / 100;
+    const startDepthM = Number(attributes.start_point_depth);
+    const endDepthM = Number(attributes.end_point_depth);
     const centerDepthM = (startDepthM + endDepthM) / 2;
 
     startCoverDepthFromAttrs = startDepthM.toFixed(3);

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppConfig } from '../../contexts/AppConfigContext';
+import DemPanel from '../DemPanel/DemPanel';
+import { useDemDisplay } from '../../contexts/DemDisplayContext';
 import Scene3D from '../Scene3D';
 import { DistanceMeasurementDisplay } from '../DistanceMeasurement';
 import './CrossSectionView.css';
@@ -15,6 +17,16 @@ function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, 
   const config = useAppConfig();
   const mode = config?.mode || 'normal';
   
+  const demCtx = useDemDisplay();
+  const activeDem = demCtx.activeDem;
+  const markLoaded = demCtx.markLoaded;
+
+  const handleDemLoaded = useCallback((terrainKey) => {
+    if (markLoaded) {
+      markLoaded(terrainKey);
+    }
+  },[markLoaded]);
+
   // 距離計測結果のstate
   const [measurementResult, setMeasurementResult] = useState(null);
 
@@ -192,8 +204,8 @@ function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, 
 
       let start, end;
       if (hasDepthAttrs) {
-        const startDepth = Number(objData.attributes.start_point_depth / 100);
-        const endDepth = Number(objData.attributes.end_point_depth / 100);
+        const startDepth = Number(objData.attributes.start_point_depth);
+        const endDepth = Number(objData.attributes.end_point_depth);
         const startCenterY = startDepth > 0 ? -(startDepth + r) : startDepth;
         const endCenterY = endDepth > 0 ? -(endDepth + r) : endDepth;
         
@@ -445,7 +457,11 @@ function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, 
           )}
         </div>
       )}
-
+      {demCtx && (
+        <div className="dem-panel-container">
+          <DemPanel apiBaseUrl={accessor.apiBaseUrl} />
+        </div>
+      )}
       {/* 3Dシーン（既存のScene3Dコンポーネントを使用） */}
       <Scene3D
         ref={scene3DRef}
@@ -468,6 +484,8 @@ function CrossSectionView({ cityJsonData, userPositions, shapeTypes, layerData, 
         sectionViewMode={sectionViewMode}
         currentSectionIndex={currentSectionIndex}
         accessor={accessor}
+        activeDem={activeDem}
+        onDemLoaded={handleDemLoaded}
       />
 
       {/* 画面下部に断面名のリストを表示 */}

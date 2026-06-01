@@ -38,7 +38,7 @@ import { captureSceneSnapshot, applySceneSnapshot } from './undo/sceneUndoSnapsh
  * - キー/マウスによるカメラ操作
  * - 左上: 管路情報、左下: カメラ情報
  */
-const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, hideInfoPanel = false, hideBackground = false, enableCrossSectionMode = false, autoModeEnabled = false, onMeasurementUpdate = null, onSelectedObjectChange = null, generatedSections = [], sectionViewMode = false, currentSectionIndex = 0, geoTiffUrl = null, terrainVisible = false, terrainOpacity = 0.8, accessor, potreeMetadataUrl = null, potreeVisible = false }, ref) {
+const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions, shapeTypes, layerData, sourceTypes, hideInfoPanel = false, hideBackground = false, enableCrossSectionMode = false, autoModeEnabled = false, onMeasurementUpdate = null, onSelectedObjectChange = null, generatedSections = [], sectionViewMode = false, currentSectionIndex = 0, geoTiffUrl = null, terrainVisible = false, terrainOpacity = 0.8, accessor, potreeMetadataUrl = null, potreeVisible = false, activeDems = [], onDemLoaded = null }, ref) {
   const config = useAppConfig();
   const mode = config?.mode || 'normal';
   const verticalLineBaseYConfig = config?.verticalLineBaseY || {};
@@ -93,6 +93,19 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // 断面自動作成モードの状態をrefで保持（クリックハンドラーで最新の値を参照するため）
   const autoModeEnabledRef = useRef(autoModeEnabled);
 
+  const activeDemsRef = useRef(activeDems);
+  useEffect(() => {
+    activeDemsRef.current = activeDems;
+  }, [activeDems]);
+
+  const buildDemStyle = () => {
+    const style = new Map();
+    activeDemsRef.current.forEach(dem => {
+      style.set(dem.terrainKey, { color: dem.color, lineStyle: dem.lineStyle, res: dem.res });
+    });
+    return style;
+  };
+
   // ドラッグ機能用のref
   const isDragging = useRef(false);
   const pendingDragRef = useRef(false);
@@ -136,7 +149,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   const cameraSendDebounceRef = useRef(null);
   const lastSentCameraRef = useRef(null);
   const sendCameraDataToServerRef = useRef(null);
-  const scheduleCameraPositionSendRef = useRef(() => {});
+  const scheduleCameraPositionSendRef = useRef(() => { });
   const localCameraControlActiveRef = useRef(false);
   const suppressUserPositionSyncUntilRef = useRef(0);
   const hasAppliedInitialUserPositionRef = useRef(false);
@@ -270,6 +283,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
   // 3Dオブジェクトデータ管理
   // const objectRegistry = useMemo(() => new SceneObjectRegistry(accessor={accessor}), [accessor]);
   const objectRegistry = useMemo(() => new SceneObjectRegistry(accessor), [accessor]);
+
+  useEffect(() => {
+    if (accessor) {
+      accessor.onConflict = (conflicts) => {
+        Notification.warning('データ競合が発生しました。');
+      };
+    }
+  }, [accessor]);
+
   const undoManagerRef = useRef(new UndoManager());
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -341,8 +363,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const meshes = Object.values(objectsRef.current || {}).filter(Boolean);
     if (meshes.length === 0) return null;
 
-    let minCm = Infinity;
-    let maxCm = -Infinity;
+    let minM = Infinity;
+    let maxM = -Infinity;
     let any = false;
 
     meshes.forEach((m) => {
@@ -354,9 +376,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       const spdRaw = attrs.start_point_depth;
       const epdRaw = attrs.end_point_depth;
       if (spdRaw == null || epdRaw == null) return;
-      const spdCm = Number(spdRaw);
-      const epdCm = Number(epdRaw);
-      if (!Number.isFinite(spdCm) || !Number.isFinite(epdCm)) return;
+      const spdM = Number(spdRaw);
+      const epdM = Number(epdRaw);
+      if (!Number.isFinite(spdM) || !Number.isFinite(epdM)) return;
 
       // 半径を計算
       let radiusM = 0;
@@ -367,21 +389,20 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       }
       if (!Number.isFinite(radiusM)) radiusM = 0;
       if (radiusM > 5) radiusM = radiusM / 1000;
-      const radiusCmInt = Math.trunc(radiusM * 100);
 
-      const spdCenterCm = spdCm + radiusCmInt;
-      const epdCenterCm = epdCm + radiusCmInt;
+      const spdCenterM = spdM + radiusM;
+      const epdCenterM = epdM + radiusM;
 
-      minCm = Math.min(minCm, spdCenterCm, epdCenterCm);
-      maxCm = Math.max(maxCm, spdCenterCm, epdCenterCm);
+      minM = Math.min(minM, spdCenterM, epdCenterM);
+      maxM = Math.max(maxM, spdCenterM, epdCenterM);
       any = true;
     });
 
-    if (!any || !Number.isFinite(minCm) || !Number.isFinite(maxCm)) {
+    if (!any || !Number.isFinite(minM) || !Number.isFinite(maxM)) {
       return null;
     }
 
-    const baseDepthM = (minCm + maxCm) * 0.5 * 0.01;
+    const baseDepthM = (minM + maxM) * 0.5;
     // 深さは地下方向
     return -baseDepthM;
   };
@@ -979,11 +1000,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       position: { x: event.clientX, y: event.clientY },
       bounds: mountRect
         ? {
-            left: mountRect.left,
-            top: mountRect.top,
-            right: mountRect.right,
-            bottom: mountRect.bottom,
-          }
+          left: mountRect.left,
+          top: mountRect.top,
+          right: mountRect.right,
+          bottom: mountRect.bottom,
+        }
         : null,
     });
   };
@@ -1242,7 +1263,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           const dragDirection = dragEnd.sub(dragStart);
           dragDirection.y = 0;
           if (dragDirection.lengthSq() > 1e-8) {
-            const geo = terrainViewerRef.current.terrainMeshRef?.geometry;
+            const allGeos = terrainViewerRef.current.getAllGeometries();
+            const primaryEntry = allGeos[0];
+            const geo = primaryEntry?.geometry;
+            const primaryTerrainKey = primaryEntry?.terrainKey;
+            const additionalGeos = allGeos.slice(1);
             crossSectionRef.current.createCrossSection(
               sectionDragTargetRef.current,
               dragStart,
@@ -1250,7 +1275,10 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               geo,
               0,
               true,
-              dragDirection
+              dragDirection,
+              additionalGeos,
+              buildDemStyle(),
+              primaryTerrainKey
             );
             logCrossSectionPlaneInfo({
               source: 'cross-section-drag',
@@ -1321,17 +1349,16 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               point[1] + deltaData[1],
               point[2] + deltaData[2],
             ]);
-            
-            // start/end_point_depth(cm) もドラッグに追従させる
-            // 下移動(delta.y < 0) → extrudePath[2]が減少 → 深さ(正値cm)が増加
-            // deltaData[2] = -delta.y (m単位)なので、cm単位のdepth変化は -delta.y * 100
+
+            // start/end_point_depth(m) もドラッグに追従させる
+            // 下移動(delta.y < 0) → extrudePath[2]が減少 → 深さが増加
             if (updatedObject.attributes) {
               const attrs = { ...updatedObject.attributes };
               if (attrs.start_point_depth != null) {
-                attrs.start_point_depth = Number(attrs.start_point_depth) - delta.y * 100;
+                attrs.start_point_depth = Number(attrs.start_point_depth) - delta.y;
               }
               if (attrs.end_point_depth != null) {
-                attrs.end_point_depth = Number(attrs.end_point_depth) - delta.y * 100;
+                attrs.end_point_depth = Number(attrs.end_point_depth) - delta.y;
               }
               updatedObject.attributes = attrs;
             }
@@ -1345,11 +1372,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           if (delta.lengthSq() > 0) {
             const oldCenter = getOldCenterFromGeom(geom);
             // Three.jsワールド座標系 → データ座標系への変換:
-            //   X(東西)はそのまま, Z(南北)は符号反転, Y(鉛直m)×100 → データZ(cm)
-            // 上移動(delta.y > 0) → 深さ減少 → vertices[*][2] (cm, 負値) が増加(0方向)
+            //   X(東西)はそのまま, Z(南北)は符号反転, Y(鉛直m) → データZ(m)
+            // 上移動(delta.y > 0) → 深さ減少 → vertices[*][2] が増加(0方向)
             const dX = delta.x;
             const dY = -delta.z;
-            const dZ = delta.y * 100; // m → cm
+            const dZ = delta.y;
             const newCenter = [oldCenter[0] + dX, oldCenter[1] + dY, oldCenter[2] + dZ];
             geom.center = newCenter;
 
@@ -1361,15 +1388,15 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               ]);
             }
 
-            // start/end_point_depth(cm) もドラッグに追従させる
-            // 上移動(delta.y > 0) → 深さ(正値cm)が減少
+            // start/end_point_depth(m) もドラッグに追従させる
+            // 上移動(delta.y > 0) → 深さが減少
             if (updatedObject.attributes) {
               const attrs = { ...updatedObject.attributes };
               if (attrs.start_point_depth != null) {
-                attrs.start_point_depth = Number(attrs.start_point_depth) - delta.y * 100;
+                attrs.start_point_depth = Number(attrs.start_point_depth) - delta.y;
               }
               if (attrs.end_point_depth != null) {
-                attrs.end_point_depth = Number(attrs.end_point_depth) - delta.y * 100;
+                attrs.end_point_depth = Number(attrs.end_point_depth) - delta.y;
               }
               updatedObject.attributes = attrs;
             }
@@ -1649,7 +1676,11 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       const clickPoint = visibleIntersects[0].point; // クリックした位置の3D座標
       if (clickedObject.userData.objectData) {
         // 標高情報を取得
-        const geo = terrainViewerRef.current.terrainMeshRef?.geometry;
+        const allGeos = terrainViewerRef.current.getAllGeometries();
+        const primaryEntry = allGeos[0];
+        const geo = primaryEntry?.geometry;
+        const primaryTerrainKey = primaryEntry?.terrainKey;
+        const additionalGeos = allGeos.slice(1);
         // 断面モードの場合は断面を生成
         if (autoModeEnabledRef.current) {
           // 断面表示を確実にクリア
@@ -1665,7 +1696,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           showOutline(clickedObject);
         } else if (enableCrossSectionMode && crossSectionRef.current) {
           // 断面生成
-          crossSectionRef.current.createCrossSection(clickedObject, clickPoint, objectsRef, geo);
+          crossSectionRef.current.createCrossSection(clickedObject, clickPoint, objectsRef, geo, 0, false, null, additionalGeos, buildDemStyle(), primaryTerrainKey);
           logCrossSectionPlaneInfo({
             source: 'cross-section-click',
             pipeObject: clickedObject,
@@ -1704,7 +1735,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
                 closestSection.z
               );
               const gridAngle = closestSection.angle || 0;
-              crossSectionRef.current.createCrossSection(clickedObject, sectionClickPoint, objectsRef, geo, gridAngle, true);
+              crossSectionRef.current.createCrossSection(clickedObject, sectionClickPoint, objectsRef, geo, gridAngle, true, null, additionalGeos, buildDemStyle(), primaryTerrainKey);
               logCrossSectionPlaneInfo({
                 source: 'closest-generated-section',
                 pipeObject: clickedObject,
@@ -2196,7 +2227,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     } else {
       // パイプ状以外の場合
       const shapeTypeName = cityObjectState.shapeTypeMap?.[String(originalData.shape_type)] || originalGeom.type;
-      
+
       // Polyhedron（shape_type === 25）の場合
       if (shapeTypeName === 'Polyhedron' || originalGeom.type === 'Polyhedron') {
         // Polyhedronは入力編集で頂点形状自体が変わるため、元データから再生成して復元する。
@@ -2216,7 +2247,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         // ExtrudeGeometry（shape_type === 21, "Extrusion"）やその他の形状
         let originalCenter = originalGeom.center || originalGeom.position || originalGeom.start || originalGeom.vertices?.[0] || [0, 0, 0];
         mesh.position.set(originalCenter[0], originalCenter[2], -originalCenter[1]);
-        
+
         // ExtrudeGeometryの場合は回転も復元
         if (originalGeom.type === 'ExtrudeGeometry' || shapeTypeName === 'Extrusion') {
           const baseRot = originalGeom.rotation ? new THREE.Quaternion().fromArray(originalGeom.rotation) : new THREE.Quaternion();
@@ -2611,12 +2642,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       skyComponentRef.current = null;
     }
 
-    const terrainViewer = new GeoTerrainWithJGWTexture(scene, {
-      heightScale: 1.0,
-      coordinateOffset: { x: -36708.8427, z: 8088.7211 },
-      applyVerticalExaggeration: true
-    });
-    terrainViewerRef.current = terrainViewer;
+    const terrainManager = new GeoTerrainManager(scene, accessor.apiBaseUrl);
+    terrainViewerRef.current = terrainManager;
 
     // JGWImageLoaderの初期化
     const jgwImageLoader = new JGWImageLoader(scene);
@@ -2707,7 +2734,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       cameraRef.current,
       raycasterRef.current,
       () => floorRef.current,
-      () => terrainViewerRef.current?.terrainMeshRef
+      () => terrainViewerRef.current?.getFirstTerrainMesh()
     );
     polylineMeasurement.enable(mountRef.current);
     polylineMeasurementRef.current = polylineMeasurement;
@@ -3957,7 +3984,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
       }
     });
     const endDbgTime = performance.now();
-    console.log('createCityObjects Time: ', endDbgTime - startDbgTime, ', Size: ', entries.length, ', Ratio: ', (endDbgTime - startDbgTime)/entries.length);
+    console.log('createCityObjects Time: ', endDbgTime - startDbgTime, ', Size: ', entries.length, ', Ratio: ', (endDbgTime - startDbgTime) / entries.length);
 
     // メッシュ情報をデータ管理にアタッチ
     objectRegistry.attachObjectsMeshRef(objectsRef.current);
@@ -4042,7 +4069,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
         }
       });
       const endDbgTime = performance.now();
-      console.log('createQuadTreeNodes Time: ', endDbgTime - startDbgTime, ', Size: ', entries.length, ', Ratio: ', (endDbgTime - startDbgTime)/entries.length);
+      console.log('createQuadTreeNodes Time: ', endDbgTime - startDbgTime, ', Size: ', entries.length, ', Ratio: ', (endDbgTime - startDbgTime) / entries.length);
     }
 
     // userPositions が無ければ自動フィット
@@ -4131,7 +4158,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
     // URLが無いモードでは既存地形を明示的に破棄
     if (!geoTiffUrl) {
-      terrainViewerRef.current.dispose();
+      if (terrainViewerRef.current.terrains.has("local_geotiff")) {
+        terrainViewerRef.current.removeDem("local_geotiff");
+      }
       return;
     }
 
@@ -4139,7 +4168,9 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     const loadTerrain = async () => {
       try {
         console.log('GeoTIFFファイルを読み込み中:', geoTiffUrl);
-        await terrainViewerRef.current.loadGeoTIFFWithJGWTexture(geoTiffUrl, jgwImageList);
+        await terrainViewerRef.current.addDemFromGeoTIFF(geoTiffUrl, jgwImageList, "local_geotiff", {
+          coordinateOffset: { x: 0, z: 0 },
+        });
         console.log('GeoTIFFファイルの読み込み完了');
       } catch (error) {
         console.error('GeoTIFFファイルの読み込みエラー:', error);
@@ -4149,10 +4180,104 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
     loadTerrain();
   }, [geoTiffUrl]);
 
+  // activeDems の変更を監視して DEM API から追加/削除 (Phase 5c)
+
+  useEffect(() => {
+
+    const manager = terrainViewerRef.current;
+
+    if (!manager || !sceneRef.current) return;
+
+    const activeKeys = new Set(activeDems.map(d => d.terrainKey));
+
+    // 削除: manager にあるが activeDems にない
+
+    for (const key of Array.from(manager.terrains.keys())) {
+
+      if (key === 'local_geotiff') continue; // GeoTIFF ロードは別 effect
+
+      if (!activeKeys.has(key)) {
+
+        manager.removeDem(key);
+
+      }
+
+    }
+
+    for (const dem of activeDems) {
+
+      if (manager.terrains.has(dem.terrainKey)) {
+
+        const existing = manager.terrains.get(dem.terrainKey);
+
+        // ★ res が変わった場合は再取得（removeDem → addDem）
+
+        const currentRes = existing._res || 1.0;
+
+        const newRes = dem.res || 1.0;
+
+        if (currentRes !== newRes) {
+
+          manager.removeDem(dem.terrainKey);
+
+          // ↓ 再追加（fall through して新規追加ロジックに入る）
+
+        } else {
+
+          // 既存: visible/opacity の同期のみ
+
+          manager.setVisible(dem.terrainKey, dem.visible);
+
+          manager.setOpacity(dem.terrainKey, dem.opacity);
+
+          // --- 追加: color 反映 ---
+
+          if (dem.color) {
+
+            manager.setColor(dem.terrainKey, dem.color);
+
+          }
+
+          continue;
+
+        }
+
+      }
+
+      // 新規追加（または res 変更による再追加）
+
+      const addOptions = { opacity: dem.opacity, res: dem.res, color: dem.color || 1.0 };    // ★ res 追加
+
+      if (dem.coordinateOffset) {
+
+        addOptions.coordinateOffset = dem.coordinateOffset;
+
+      }
+
+      manager.addDem(dem.surfaceId, dem.revisionId, addOptions)
+
+        .then(() => {
+
+          // ★ res を terrains entry に記録（次回比較用）
+
+          const entry = manager.terrains.get(dem.terrainKey);
+
+          if (entry) entry._res = dem.res || 1.0;
+
+          if (onDemLoaded) onDemLoaded(dem.terrainKey);
+
+        })
+
+        .catch(err => { console.error(`DEM ロード失敗 (${dem.terrainKey}):`, err); });
+
+    }
+
+  }, [activeDems]);
+
   // 地形の表示/非表示を制御
   useEffect(() => {
     if (terrainViewerRef.current) {
-      terrainViewerRef.current.setVisible(terrainVisible);
+      terrainViewerRef.current.setAllVisible(terrainVisible);
     }
     if (jgwImageLoaderRef.current) {
       if (terrainVisible) {
@@ -4180,8 +4305,8 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
 
   // 地形opacityを制御（0〜1）
   useEffect(() => {
-    if (terrainViewerRef.current && typeof terrainViewerRef.current.setOpacity === 'function') {
-      terrainViewerRef.current.setOpacity(terrainOpacity);
+    if (terrainViewerRef.current && typeof terrainViewerRef.current.setAllOpacity === 'function') {
+      terrainViewerRef.current.setAllOpacity(terrainOpacity);
     }
   }, [terrainOpacity]);
 
@@ -4262,7 +4387,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           const materialName = attrs.material;
           const pipeKindName = attrs.pipe_kind;
           const sourceName = sourceTypeMap?.[sourceType];
-          
+
           let materialVisible = true;
           if (materialVisibilityMap) {
             if (pipeKindName) {
@@ -4271,7 +4396,7 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
               materialVisible = materialVisibilityMap?.[sourceName]?.material[materialName];
             }
           }
-          
+
           if (typeof materialVisible !== 'boolean') {
             materialVisible = true;
           }
@@ -4374,9 +4499,14 @@ const Scene3D = React.forwardRef(function Scene3D({ cityJsonData, userPositions,
           // グリッド線の角度を渡す
           const gridAngle = currentSection.angle || 0;
           crossSectionRef.current.clearCrossSectionTerrainLine();
+          
           crossSectionRef.current.clear();
-          const geo = terrainViewerRef.current.terrainMeshRef?.geometry;
-          crossSectionRef.current.createCrossSection(selectedPipe, clickPoint, objectRegistry, geo, gridAngle, true);
+          const allGeos = terrainViewerRef.current.getAllGeometries();
+          const primaryEntry = allGeos[0];
+          const geo = primaryEntry?.geometry;
+          const primaryTerrainKey = primaryEntry?.terrainKey;
+          const additionalGeos = allGeos.slice(1);
+          crossSectionRef.current.createCrossSection(selectedPipe, clickPoint, objectRegistry, geo, gridAngle, true, null, additionalGeos, buildDemStyle(), primaryTerrainKey);
           logCrossSectionPlaneInfo({
             source: 'section-view',
             pipeObject: selectedPipe,

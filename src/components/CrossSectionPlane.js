@@ -139,13 +139,16 @@ class CrossSectionPlane {
     // 地表の三角形（四分木）
     this.terrainTriangles = null;
 
+    this.TerrainTriangles = new Map();
+    this.additionalTerrainTriangles = [];
+
     this.CrossSectionTerrainLineNum = 0;
     this.dbgNodeAxisLineNum = 0;
     this.dbgTerrainPolygonLineNum = 0;
 
     // 地表の表示状態
     this.terrainVisible = terrainVisible;
-    
+
     // モード（'normal' または 'elevation'）
     this.mode = mode;
     this.verticalLineBaseY = verticalLineBaseY || {};
@@ -348,7 +351,7 @@ class CrossSectionPlane {
    * @param {boolean} autoModeEnabled - 自動生成モードかどうか（デフォルト: false）
    * @param {THREE.Vector3|null} dragGridDirection - ドラッグ由来のグリッド方向（任意）
    */
-  createCrossSection(pipeObject, clickPoint, reg, geometry = null, gridAngle = 0, autoModeEnabled = false, dragGridDirection = null) {
+  createCrossSection(pipeObject, clickPoint, reg, geometry = null, gridAngle = 0, autoModeEnabled = false, dragGridDirection = null, additionalGeometry = [], demStyle = null, primaryTerrainKey = null) {
     // objectReqistry
     console.log('req:', reg);
 
@@ -360,6 +363,9 @@ class CrossSectionPlane {
 
     this.pendingCrossSections = [];
     this.pendingVerticalLines = [];
+    this.demStyle = demStyle;
+    this.primaryTerrainKey = primaryTerrainKey;
+
     const providedAngle = Number.isFinite(gridAngle) ? gridAngle : 0;
     const normalizedAngle = this.normalizeAngle360(providedAngle);
     this.gridAngle = providedAngle; // 入力値そのもの（UI表示用）
@@ -456,6 +462,24 @@ class CrossSectionPlane {
         this.rootQuadTreeTriangle(enlargedBox, maxDepth, maxObjects);
         // データを四分木に登録
         this.registerQuadTreeTriangle(triangles);
+      }
+    }
+
+
+    if (additionalGeometry && additionalGeometry.length > 0) {
+      for (const { terrainKey, geometry: addGeo } of additionalGeometry) {
+        if (!addGeo || !addGeo.attributes || !addGeo.attributes.position) continue;
+        const qt = this._buildQuadTreeFromGeometry(addGeo);
+        if (qt) {
+          this.TerrainTriangles.set(terrainKey, qt);
+        }
+      }
+    }
+
+    if (primaryTerrainKey) {
+      const terrain = this.TerrainTriangles.get(primaryTerrainKey);
+      if (terrain) {
+        this.terrainTriangles = terrain;
       }
     }
 
@@ -653,10 +677,17 @@ class CrossSectionPlane {
         let line = this.getIntersectionLine(geo, linePosition, planeNormal);
         // 交線を描画
         if (line) {
+          const primaryStyle = this.demStyle?.get(this.primaryTerrainKey);
+          if (primaryStyle) {
+            line.material.dispose();
+            line.material = new THREE.LineBasicMaterial({ color: primaryStyle.color });
+          }
           line.name = 'CrossSectionTerrainLine0';
           this.scene.add(line);
           this.CrossSectionTerrainLineNum = 1;
         }
+
+        this._computerAdditionalTerrainLines(linePosition, planeNormal);
       }
     } else {
       this.drawVerticalLinesAtCrossSectionPlane(clickPoint.z, null, geo);
@@ -914,13 +945,14 @@ class CrossSectionPlane {
     // Hough変換と四分木を使用した最適化処理
     let nearObjects = allObjects;
     let terrainTriangles = null;
+    let houghLine2d = null;
 
     const startDbgTime1 = performance.now();
 
     if (reg && typeof reg.searchNodes === 'function') {
       // Hough変換を使用して断面の直線を計算
       const line2d = this.computeHoughLineFrom3D(planeNormal, planePoint);
-
+      houghLine2d = line2d;
       // SceneObjectRegistryからノードを検索
       const nodes = reg.searchNodes(line2d.theta, line2d.rho);
 
@@ -935,6 +967,7 @@ class CrossSectionPlane {
       // 四分木が利用可能な場合は地形三角形を検索
       if (QuadtreeNodeTriangle && this.terrainTriangles && typeof this.terrainTriangles.insert === 'function') {
         const line2d = this.computeHoughLineFrom3D(planeNormal, planePoint);
+        houghLine2d = line2d;
         terrainTriangles = this.searchTriangles(-line2d.theta, line2d.rho);
       }
     }
@@ -1030,7 +1063,9 @@ class CrossSectionPlane {
         if (centerPoint) {
           const startDbgTimeD = performance.now();
 
-          const basePoint1 = this.findFirstLinePlaneIntersectionIfInsideXZ(centerPoint, terrainTriangles);
+          const demRef = objectData.attributes.demRef;
+          const targetTriangles = this._searchTrianglesForDemRef(demRef, houghLine2d, terrainTriangles);
+          const basePoint1 = this.findFirstLinePlaneIntersectionIfInsideXZ(centerPoint, targetTriangles);
 
           const endDbgTimeD = performance.now();
           dbgTimeD += (endDbgTimeD - startDbgTimeD);
@@ -1051,6 +1086,7 @@ class CrossSectionPlane {
 
           const crossSectionTopY = intersectionPoint.y + radius;
 
+          const demTerrainKey = this.getDemTerrainKey(demRef);
           this.pendingVerticalLines.push({
             key: this.getCrossSectionKey(obj, intersectionPoint.z),
             pipePosition,
@@ -1058,7 +1094,8 @@ class CrossSectionPlane {
             color: obj.material.color,
             fallbackTopY: crossSectionTopY,
             radius,
-            attributeLabelText: formatPipeAttributeLabel(objectData)
+            attributeLabelText: formatPipeAttributeLabel(objectData),
+            demTerrainKey: demTerrainKey
           });
 
           const endDbgTimeE = performance.now();
@@ -1089,8 +1126,10 @@ class CrossSectionPlane {
 
               const startDbgTimeD = performance.now();
 
+              const demRef = objectData.attributes.demRef;
+              const targetTriangles = this._searchTrianglesForDemRef(demRef, houghLine2d, terrainTriangles);
               const basePoint = this.hasTerrainData(geo)
-                ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, terrainTriangles)
+                ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, targetTriangles)
                 : null;
 
               const endDbgTimeD = performance.now();
@@ -1101,6 +1140,7 @@ class CrossSectionPlane {
                 ? 0
                 : basePoint[0];
 
+              const demTerrainKey = this.getDemTerrainKey(demRef);
               this.pendingVerticalLines.push({
                 key: this.getCrossSectionKey(obj, intersectionPoint.z),
                 pipePosition,
@@ -1108,7 +1148,8 @@ class CrossSectionPlane {
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
                 radius,
-                attributeLabelText: formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData),
+                demTerrainKey: demTerrainKey
               });
 
               if (basePoint == null) {
@@ -1145,8 +1186,10 @@ class CrossSectionPlane {
 
               const startDbgTimeD = performance.now();
 
+              const demRef = objectData.attributes.demRef;
+              const targetTriangles = this._searchTrianglesForDemRef(demRef, houghLine2d, terrainTriangles);
               const basePoint = this.hasTerrainData(geo)
-                ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, terrainTriangles)
+                ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, targetTriangles)
                 : null;
 
               const endDbgTimeD = performance.now();
@@ -1157,6 +1200,7 @@ class CrossSectionPlane {
                 ? 0
                 : basePoint[0];
 
+              const demTerrainKey = this.getDemTerrainKey(demRef);
               this.pendingVerticalLines.push({
                 key: this.getCrossSectionKey(obj, intersectionPoint.z),
                 pipePosition,
@@ -1164,7 +1208,8 @@ class CrossSectionPlane {
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
                 radius,
-                attributeLabelText: formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData),
+                demTerrainKey: demTerrainKey
               });
 
               if (basePoint == null) {
@@ -1268,7 +1313,9 @@ class CrossSectionPlane {
           const intersectionPoint = new THREE.Vector3(intersectionCenter.x, pipeTopY, crossSectionZ);
           const pipePosition = new THREE.Vector3(intersectionPoint.x, 0, intersectionPoint.z);
 
-          const triangles = this.terrainTriangles; // dummy
+          const demRef = objectData.attributes.demRef;
+          const demTerrainKey = this.getDemTerrainKey(demRef);
+          const triangles = this._getTerrainQuadTreeByKey(demTerrainKey); // dummy
           const basePoint = this.hasTerrainData(geo)
             ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, triangles)
             : null;
@@ -1284,7 +1331,8 @@ class CrossSectionPlane {
             color: obj.material.color,
             fallbackTopY,
             radius,
-            attributeLabelText: formatPipeAttributeLabel(objectData)
+            attributeLabelText: formatPipeAttributeLabel(objectData),
+            demTerrainKey: demTerrainKey
           });
 
           this.pendingCrossSections.push({
@@ -1318,7 +1366,9 @@ class CrossSectionPlane {
               const pipePosition = new THREE.Vector3(intersectionPoint.x, 0, intersectionPoint.z);
 
               const crossSectionTopY = intersectionPoint.y + radius;
-              const triangles = this.terrainTriangles; // dummy
+              const demRef = objectData.attributes.demRef;
+              const demTerrainKey = this.getDemTerrainKey(demRef);
+              const triangles = this._getTerrainQuadTreeByKey(demTerrainKey); // dummy
               const basePoint = this.hasTerrainData(geo)
                 ? this.findFirstLinePlaneIntersectionIfInsideXZ(intersectionPoint, triangles)
                 : null;
@@ -1333,7 +1383,8 @@ class CrossSectionPlane {
                 color: obj.material.color,
                 fallbackTopY: crossSectionTopY,
                 radius,
-                attributeLabelText: formatPipeAttributeLabel(objectData)
+                attributeLabelText: formatPipeAttributeLabel(objectData),
+                demTerrainKey: demTerrainKey
               });
 
               this.pendingCrossSections.push({
@@ -2000,6 +2051,8 @@ class CrossSectionPlane {
     this.line = null;
     // this.terrainVertices = [];
     this.terrainTriangles = null;
+    this.TerrainTriangles.clear();
+    this.clearAdditionalTerrainLines();
   }
 
   /**
@@ -2301,8 +2354,8 @@ class CrossSectionPlane {
 
     let start, end;
     if (hasDepthAttrs) {
-      const startDepth = Number(objectData.attributes.start_point_depth / 100);
-      const endDepth = Number(objectData.attributes.end_point_depth / 100);
+      const startDepth = Number(objectData.attributes.start_point_depth);
+      const endDepth = Number(objectData.attributes.end_point_depth);
       const startCenterY = startDepth > 0 ? -(startDepth + radius) : startDepth;
       const endCenterY = endDepth > 0 ? -(endDepth + radius) : endDepth;
       start = new THREE.Vector3(startVertex[0], startCenterY, -startVertex[1]);
@@ -3070,3 +3123,535 @@ class Vector3 {
 }
 
 export default CrossSectionPlane;
+
+// ============================================================
+
+// Phase 5c: CrossSectionPlane に追加する複数 DEM 対応メソッド
+
+// （クラス定義内に prototype で追加）
+
+// ============================================================
+
+/**
+
+* BufferGeometry から QuadTree を構築して返す（クラスインスタンスの terrainTriangles には格納しない）
+
+* @param {THREE.BufferGeometry} geometry
+
+* @returns {QuadtreeNodeTriangle|null}
+
+*/
+
+CrossSectionPlane.prototype._buildQuadTreeFromGeometry = function (geometry) {
+
+  if (!geometry || !geometry.attributes?.position) return null;
+
+  const positionAttr = geometry.attributes.position;
+
+  const indexAttr = geometry.index;
+
+  const vertices = [];
+
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+
+  for (let i = 0; i < positionAttr.count; i++) {
+
+    const point = new THREE.Vector3().fromBufferAttribute(positionAttr, i);
+
+    vertices.push(point);
+
+    minX = Math.min(minX, point.x);
+
+    maxX = Math.max(maxX, point.x);
+
+    minZ = Math.min(minZ, point.z);
+
+    maxZ = Math.max(maxZ, point.z);
+
+  }
+
+  const center = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
+
+  const halfW = (maxX - minX);
+
+  const halfZ = (maxZ - minZ);
+
+  const boxMin = new THREE.Vector3(center.x - halfW, 0, center.z - halfZ);
+
+  const boxMax = new THREE.Vector3(center.x + halfW, 0, center.z + halfZ);
+
+  const box = new THREE.Box3(boxMin, boxMax);
+
+  const boundary = {
+
+    min: { x: box.min.x, y: box.min.z },
+
+    max: { x: box.max.x, y: box.max.z },
+
+  };
+
+  const qt = new QuadtreeNodeTriangle(boundary, 0, 5, 1000);
+
+  const triangles = [];
+
+  if (indexAttr) {
+
+    // indexed geometry
+
+    for (let i = 0; i < indexAttr.count; i += 3) {
+
+      const aIdx = indexAttr.getX(i);
+
+      const bIdx = indexAttr.getX(i + 1);
+
+      const cIdx = indexAttr.getX(i + 2);
+
+      triangles.push([vertices[aIdx], vertices[bIdx], vertices[cIdx]]);
+
+    }
+
+  } else {
+
+    // non-indexed geometry: position を 3 頂点ずつ読んで triangle を生成
+
+    for (let i = 0; i < vertices.length; i += 3) {
+
+      if (i + 2 < vertices.length) {
+
+        triangles.push([vertices[i], vertices[i + 1], vertices[i + 2]]);
+
+      }
+
+    }
+
+  }
+
+  for (let i = 0; i < triangles.length; i++) {
+
+    const p1 = this.convertToCustomCoordinate(triangles[i][0]);
+
+    const p2 = this.convertToCustomCoordinate(triangles[i][1]);
+
+    const p3 = this.convertToCustomCoordinate(triangles[i][2]);
+
+    const tri = new Triangle(i, { x: p1.x, y: p1.y, z: p1.z }, { x: p2.x, y: p2.y, z: p2.z }, { x: p3.x, y: p3.y, z: p3.z });
+
+    qt.insert(tri);
+
+  }
+
+  return qt;
+
+};
+
+// ============================================================
+
+// Phase 9b: demRef → terrainKey 解決 / QuadTree 統一検索
+
+// ============================================================
+
+/**
+
+* demRef オブジェクトから terrainKey 文字列を生成する。
+
+* @param {object|null|undefined} demRef - { surfaceId, revisionId } or { meshSurfaceId, meshRevisionId }
+
+* @returns {string|null}
+
+*/
+
+CrossSectionPlane.prototype._demRefToTerrainKey = function (demRef) {
+
+  if (!demRef) return null;
+
+  const sid = demRef.surfaceId ?? demRef.meshSurfaceId;
+
+  const rid = demRef.revisionId ?? demRef.meshRevisionId;
+
+  if (sid == null || rid == null) return null;
+
+  return `${sid}_${rid}`;
+
+};
+
+/**
+
+* terrainKey から対応する QuadTree を検索する。
+
+* terrainTrianglesMap（primary + additional）を横断検索し、
+
+* 見つからない場合は primary DEM に fallback する。
+
+* @param {string|null} terrainKey
+
+* @returns {QuadtreeNodeTriangle|null}
+
+*/
+
+CrossSectionPlane.prototype._getTerrainQuadTreeByKey = function (terrainKey) {
+
+  if (!terrainKey) return this.terrainTriangles || null;
+
+  if (this.terrainTrianglesMap && this.terrainTrianglesMap.has(terrainKey)) {
+
+    return this.terrainTrianglesMap.get(terrainKey);
+
+  }
+
+  // terrainKey が terrainTrianglesMap に存在しない場合は primary に fallback
+
+  return this.terrainTriangles || null;
+
+};
+
+/**
+
+* demRef に基づいて対応する QuadTree から三角形を検索する。
+
+* findFirstLinePlaneIntersectionIfInsideXZ で使用する三角形配列を返す。
+
+* @param {object|null} demRef - 管路の demRef 属性
+
+* @param {object|null} houghLine2d - { theta, rho } Hough 変換パラメータ
+
+* @param {Array|null} fallbackTriangles - demRef が無い場合の fallback 三角形配列
+
+* @returns {Array|null}
+
+*/
+
+CrossSectionPlane.prototype._searchTrianglesForDemRef = function (demRef, houghLine2d, fallbackTriangles) {
+
+  if (!houghLine2d) return fallbackTriangles;
+
+  const terrainKey = this._demRefToTerrainKey(demRef);
+
+  if (!terrainKey) return fallbackTriangles;
+
+  // primary と同じ key なら fallback をそのまま返す（重複検索回避）
+
+  if (terrainKey === this.primaryTerrainKey) return fallbackTriangles;
+
+  const qt = this._getTerrainQuadTreeByKey(terrainKey);
+
+  if (!qt || typeof qt.insert !== 'function') return fallbackTriangles;
+
+  const result = [];
+
+  this.searchIntersectingTriangles(qt, -houghLine2d.theta, houghLine2d.rho, result);
+
+  return result.length > 0 ? result : fallbackTriangles;
+
+};
+
+/**
+
+* 追加 DEM 断面ラインをクリア
+
+*/
+
+CrossSectionPlane.prototype.clearAdditionalTerrainLines = function () {
+
+  for (const line of this.additionalTerrainLines) {
+
+    if (line.parent) line.parent.remove(line);
+
+    if (line.geometry) line.geometry.dispose();
+
+    if (line.material) line.material.dispose();
+
+  }
+
+  this.additionalTerrainLines = [];
+
+};
+
+// ============================================================
+
+// Phase 6e: 断面マルチ DEM ライン描画メソッド
+
+// ============================================================
+
+/**
+
+* 追加 DEM の断面交差ラインを計算・描画する。
+
+* terrainTrianglesMap に格納された QuadTree を走査し、切断面との交差点列から
+
+* 色・線種付きの THREE.Line を生成してシーンに追加する。
+
+*
+
+* @param {THREE.Vector3} planePoint - 切断面上の基準点（custom 座標系変換前）
+
+* @param {THREE.Vector3} planeNormal - 切断面の法線（custom 座標系: x, -z, y）
+
+*/
+
+CrossSectionPlane.prototype._computeAdditionalTerrainLines = function (planePoint, planeNormal) {
+
+  this.clearAdditionalTerrainLines();
+
+  if (!this.terrainTrianglesMap || this.terrainTrianglesMap.size === 0) return;
+
+  const planePointCustom = this.convertToCustomCoordinate(planePoint);
+
+  const planeNormalVec = new THREE.Vector3(
+
+    planeNormal.x, planeNormal.y, planeNormal.z
+
+  ).normalize();
+
+  for (const [terrainKey, quadTree] of this.terrainTrianglesMap.entries()) {
+
+    if (!quadTree) continue;
+
+    // primary DEM は getIntersectionLine() で既に描画済みなのでスキップ
+
+    if (terrainKey === this.primaryTerrainKey) continue;
+
+    const line2d = this.computeHoughLineFrom3D(
+
+      new THREE.Vector3(planeNormal.x, 0, -planeNormal.y),
+
+      planePoint
+
+    );
+
+    const triangles = [];
+
+    this.searchIntersectingTriangles(quadTree, -line2d.theta, line2d.rho, triangles);
+
+    if (triangles.length === 0) continue;
+
+    const intersectionPoints = [];
+
+    for (const tri of triangles) {
+
+      // ★ 修正: searchIntersectingTriangles が返す standard 座標を
+
+      //         custom 座標に戻してから交点計算する
+
+      const v0 = this.convertToCustomCoordinate(
+
+        new THREE.Vector3(tri.p1.x, tri.p1.y, tri.p1.z)
+
+      );
+
+      const v1 = this.convertToCustomCoordinate(
+
+        new THREE.Vector3(tri.p2.x, tri.p2.y, tri.p2.z)
+
+      );
+
+      const v2 = this.convertToCustomCoordinate(
+
+        new THREE.Vector3(tri.p3.x, tri.p3.y, tri.p3.z)
+
+      );
+
+      const edges = [
+
+        [v0, v1],
+
+        [v1, v2],
+
+        [v2, v0],
+
+      ];
+
+      for (const [p1, p2] of edges) {
+
+        // ★ 今は全て custom 座標系内で計算
+
+        const hit = this._linePlaneIntersect(
+
+          p1, p2, planePointCustom, planeNormalVec
+
+        );
+
+        if (hit) {
+
+          // ★ custom → standard に戻す
+
+          intersectionPoints.push(this.convertToStandardCoordinate(hit));
+
+        }
+
+      }
+
+    }
+
+    if (intersectionPoints.length < 2) continue;
+
+    const sorted = this._sortPointsAlongCrossSection(intersectionPoints, planePoint);
+
+    const style = (this.demStyles && this.demStyles.get)
+
+      ? (this.demStyles.get(terrainKey) || { color: '#888888', lineStyle: 'solid' })
+
+      : { color: '#888888', lineStyle: 'solid' };
+
+    const line = this._createStyledLine(sorted, style);
+
+    if (line) {
+
+      this.additionalTerrainLines.push(line);
+
+      this.scene.add(line);
+
+    }
+
+  }
+
+};
+
+/**
+
+* 線分と平面の交点を計算（custom 座標系内で動作）
+
+* @param {THREE.Vector3} p1 - 線分端点1
+
+* @param {THREE.Vector3} p2 - 線分端点2
+
+* @param {THREE.Vector3} planePoint - 平面上の点
+
+* @param {THREE.Vector3} planeNormal - 平面の法線（正規化済み）
+
+* @returns {THREE.Vector3|null}
+
+*/
+
+CrossSectionPlane.prototype._linePlaneIntersect = function (p1, p2, planePoint, planeNormal) {
+
+  const lineDir = new THREE.Vector3().subVectors(p2, p1);
+
+  const denom = planeNormal.dot(lineDir);
+
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const t = planeNormal.dot(new THREE.Vector3().subVectors(planePoint, p1)) / denom;
+
+  if (t >= 0 && t <= 1) {
+
+    return new THREE.Vector3().addVectors(p1, lineDir.multiplyScalar(t));
+
+  }
+
+  return null;
+
+};
+
+/**
+
+* 交差点列を断面線方向でソートする。
+
+* 断面平面の法線に直交する水平方向をソート軸として使用する。
+
+*
+
+* @param {THREE.Vector3[]} points - 交差点配列（標準座標系）
+
+* @param {THREE.Vector3} planePoint - 切断面上の基準点
+
+* @returns {THREE.Vector3[]} ソート済み交差点配列
+
+*/
+
+CrossSectionPlane.prototype._sortPointsAlongCrossSection = function (points, planePoint) {
+
+  if (points.length <= 2) return points;
+
+  // 断面方向ベクトル（currentGridDirection を利用）
+
+  const lineDir = (this.currentGridDirection && this.currentGridDirection.lengthSq() > 1e-6)
+
+    ? this.currentGridDirection.clone().normalize()
+
+    : new THREE.Vector3(1, 0, 0);
+
+  const withStation = points.map(p => {
+
+    const v = new THREE.Vector3().subVectors(p, planePoint);
+
+    return { point: p, station: v.dot(lineDir) };
+
+  });
+
+  withStation.sort((a, b) => a.station - b.station);
+
+  return withStation.map(ws => ws.point);
+
+};
+
+/**
+
+* スタイル付き THREE.Line を生成する。
+
+* @param {THREE.Vector3[]} points - ライン頂点配列
+
+* @param {{ color: string, lineStyle: string }} style - 色・線種
+
+* @returns {THREE.Line|null}
+
+*/
+
+CrossSectionPlane.prototype._createStyledLine = function (points, style) {
+
+  if (!points || points.length < 2) return null;
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+  let material;
+
+  if (style.lineStyle === 'dashed') {
+
+    material = new THREE.LineDashedMaterial({
+
+      color: style.color,
+
+      dashSize: 0.3,
+
+      gapSize: 0.15,
+
+      linewidth: 1,
+
+    });
+
+  } else if (style.lineStyle === 'dotted') {
+
+    material = new THREE.LineDashedMaterial({
+
+      color: style.color,
+
+      dashSize: 0.05,
+
+      gapSize: 0.1,
+
+      linewidth: 1,
+
+    });
+
+  } else {
+
+    material = new THREE.LineBasicMaterial({
+
+      color: style.color,
+
+      linewidth: 1,
+
+    });
+
+  }
+
+  const line = new THREE.Line(geometry, material);
+
+  if (style.lineStyle !== 'solid') {
+
+    line.computeLineDistances(); // dashed/dotted に必要
+
+  }
+
+  return line;
+
+};

@@ -70,8 +70,8 @@ const getStartEndPoints = (geom, obj, radius) => {
                         Number.isFinite(Number(obj.attributes.end_point_depth));
  
   if (hasDepthAttrs) {
-    const startDepth = Number(obj.attributes.start_point_depth / 100);
-    const endDepth = Number(obj.attributes.end_point_depth / 100);
+    const startDepth = Number(obj.attributes.start_point_depth);
+    const endDepth = Number(obj.attributes.end_point_depth);
     const startCenterY = startDepth > 0 ? -(startDepth + radius) : startDepth;
     const endCenterY = endDepth > 0 ? -(endDepth + radius) : endDepth;
     return [

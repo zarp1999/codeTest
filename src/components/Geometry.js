@@ -183,8 +183,8 @@ const getStartEndPoints = (geom, obj, radius) => {
     Number.isFinite(Number(obj.attributes.end_point_depth));
  
   if (hasDepthAttrs) {
-    const startDepth = Number(obj.attributes.start_point_depth / 100);
-    const endDepth = Number(obj.attributes.end_point_depth / 100);
+    const startDepth = Number(obj.attributes.start_point_depth);
+    const endDepth = Number(obj.attributes.end_point_depth);
     // depthは「地表から下向き正」。常に同じ規則でワールドYへ変換する。
     // これにより、depthを減算したとき（浅くしたとき）は必ず上方向へ移動する。
     const startCenterY = -(startDepth + radius);
@@ -286,9 +286,7 @@ const createNonePipeGeometry = (shapeTypeName, geom, obj) => {
  
         // 深さ（奥行き）を計算
         // NOTE:
-        // - Boxのvertices[2]はデータによってcm（例: 100）で来ることがあり、そのまま距離計算すると
-        //   端点深さ編集で「異常に長い直方体」になってしまう。
-        // - Boxの回転/配置は getStartEndPoints(= start_point_depth/end_point_depth を /100 したm座標) を使っているため、
+        // - Boxの回転/配置は getStartEndPoints(= start_point_depth/end_point_depth [m]) を使っているため、
         //   奥行きも同じ基準（Three.jsワールド座標）で算出する。
         const radius = (Number.isFinite(h) ? h : 1) / 2;
         const [startPoint, endPoint] = getStartEndPoints(geom, obj, radius);

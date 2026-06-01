@@ -7,6 +7,7 @@ import CrossSectionView from './components/views/CrossSectionView';
 // import { createDataAccessor } from './DataAccessor/Factory.js';
 import { LayerContext } from './ViewerApp.js'
 import { AppConfigProvider, useAppConfig } from './contexts/AppConfigContext.js';
+import { DemDisplayProvider } from './contexts/DemDisplayContext.js';
  
 /**
  * メインアプリケーションコンポーネント
@@ -186,6 +187,7 @@ function AppContent({ dataAccessor }) {
  
   return (
     <div className="App3D">
+      <DemDisplayProvider apiBaseUrl={accessor.apiBaseUrl}>
       <div className="main-content">
         <div className="scene-container">
           <Routes>
@@ -202,6 +204,7 @@ function AppContent({ dataAccessor }) {
                   geoTiffUrl={geoTiffUrl}
                   accessor={accessor}
                   potreeMetadataUrl={potreeMetadataUrl}
+                  apiBaseUrl={accessor.apiBaseUrl}
                 />
               }
             />
@@ -236,6 +239,7 @@ function AppContent({ dataAccessor }) {
                   geoTiffUrl={geoTiffUrl}
                   accessor={accessor}
                   potreeMetadataUrl={potreeMetadataUrl}
+                  apiBaseUrl={accessor.apiBaseUrl}
                 />
               }
             />
@@ -259,6 +263,7 @@ function AppContent({ dataAccessor }) {
           </Routes>
         </div>
       </div>
+      </DemDisplayProvider>
     </div>
   );
 }

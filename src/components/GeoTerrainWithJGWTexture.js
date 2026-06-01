@@ -361,6 +361,18 @@ class GeoTerrainWithJGWTexture {
     }
   }
 
+  setColor(color) {
+    if (this.terrainMeshRef && this.terrainMeshRef.material) {
+      const mat = this.terrainMeshRef.material;
+      if (mat.color) {
+      return;
+      }
+
+      mat.color.set(color);
+      mat.needsUpdate = true;
+    }
+  }
+
   /**
    * 3D地形表面を作成して表示
    * @param {THREE.BufferGeometry} geometry - 地形メッシュのジオメトリ
